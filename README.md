@@ -4,7 +4,7 @@
 
 Нажали клавишу → сказали → отпустили → текст появился там, где стоял курсор. В любом приложении.
 
-> Статус: публичная бета. Свежий образ — [v0.2.0-beta.1](https://github.com/mikwiseman/wai-dictation/releases/tag/v0.2.0-beta.1), подписан Developer ID и нотаризован; страница загрузки — [wai.computer/dictation](https://wai.computer/dictation/). Лента обновлений пока пуста: беты ставятся скачиванием вручную, Sparkle включится с первым полным релизом.
+> Статус: публичная бета. Свежий образ — [v0.2.0-beta.1](https://github.com/mikwiseman/wai-dictation/releases/tag/v0.2.0-beta.1), подписан Developer ID и нотаризован; страница загрузки — [wai.computer/dictation](https://wai.computer/dictation/). Обновления приходят через Sparkle: установленная бета сама предложит новую версию.
 
 ## Почему локально
 
