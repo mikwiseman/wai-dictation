@@ -6,12 +6,22 @@
     <description>Обновления Wai Dictation</description>
     <language>ru</language>
     <item>
+      <title>0.2.2</title>
+      <pubDate>Wed, 05 Aug 2026 18:05:00 +0300</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<h2>0.2.2</h2><ul><li>The dictionary learns from your edits automatically: fix a term right where the text was inserted, and it becomes a replacement. Only the field the app typed into is re-read, briefly; toggle in Settings.</li><li>Keyboard shortcuts sharing your dictation modifier no longer trigger phantom recordings or silent hands-free mode.</li></ul>]]></description>
+      <enclosure url="https://github.com/mikwiseman/wai-dictation/releases/download/v0.2.2-beta.1/WaiDictation-0.2.2.dmg" length="3192752" type="application/octet-stream" sparkle:edSignature="heLNoAn3092NV+WBvfpFQ2tAYLZqLdSyjLMBve1ENpjGoMaXaJ1KT0y4VX4+Cd2ydkCt1eiUHNHq7uGzhJebBw==" />
+    </item>
+    <item>
       <title>0.2.1</title>
       <pubDate>Wed, 05 Aug 2026 17:36:26 +0300</pubDate>
       <sparkle:version>3</sparkle:version>
       <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description>&lt;p&gt;&amp;lt;h2&amp;gt;0.2.1&amp;lt;/h2&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;ul&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Keyboard shortcuts that share your dictation modifier (Ctrl+C with Left Control, Cmd+C with Right Command) no longer start phantom recordings, and two shortcuts in a row no longer enable hands-free mode silently.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Live transcription preview while you speak, with a microphone-level indicator and a &amp;quot;no sound detected&amp;quot; hint.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Recognition language control: Automatic plus 29 languages; interface is now fully in English; the dictionary learns terms from your corrections.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;/ul&amp;gt;&lt;/p&gt;</description>
-      <enclosure url="https://github.com/mikwiseman/wai-dictation/releases/download/v0.2.1-beta.1/WaiDictation-0.2.1.dmg" length="3199416" type="application/octet-stream" sparkle:edSignature="yUBVNtoqZ+nn5F5p4AYX2cbAURzmlQc//8zcYafZrSAlwryvQuXOxfOlnqRNecfi/9/qWEk9CykXmv530dIXDg==" />
+      <description><![CDATA[<h2>0.2.1</h2><ul><li>Keyboard shortcuts that share your dictation modifier no longer start phantom recordings, and two shortcuts in a row no longer enable hands-free mode silently.</li><li>Live transcription preview while you speak, with a microphone-level indicator.</li><li>Recognition language control: Automatic plus 29 languages; interface fully in English.</li></ul>]]></description>
+      <enclosure url="https://github.com/mikwiseman/wai-dictation/releases/download/v0.2.1-beta.1/WaiDictation-0.2.1.dmg" length="" type="application/octet-stream" sparkle:edSignature="" />
     </item>
-    
+  </channel>
+</rss>
