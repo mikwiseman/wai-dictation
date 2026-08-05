@@ -6,13 +6,12 @@
     <description>Обновления Wai Dictation</description>
     <language>ru</language>
     <item>
-      <title>0.2.0</title>
-      <pubDate>Wed, 05 Aug 2026 11:55:20 +0300</pubDate>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <title>0.2.1</title>
+      <pubDate>Wed, 05 Aug 2026 17:36:26 +0300</pubDate>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <description>&lt;p&gt;Вторая публичная бета — продукт вырос на порядок.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Живой предпросмотр: слова появляются на панели, пока вы говорите&lt;/li&gt;&lt;li&gt;Правка последней диктовки учит словарь — и текстовые замены, и акустику&lt;/li&gt;&lt;li&gt;Выбор языка распознавания: Automatic и 29 языков движка&lt;/li&gt;&lt;li&gt;Акустический подсказчик терминов: смешанная русско-английская речь заметно точнее&lt;/li&gt;&lt;li&gt;Плотная речь (300+ слов в минуту) больше не теряет хвосты&lt;/li&gt;&lt;li&gt;Текст после отпускания клавиши приходит на треть быстрее&lt;/li&gt;&lt;li&gt;Сигнал старта играет только после первого записанного кадра — первое слово не срезается&lt;/li&gt;&lt;li&gt;Клавиша объясняет неготовность, ошибки оседают в меню, значок сигналит о спасённом тексте&lt;/li&gt;&lt;li&gt;Автозапуск при входе, выключатель предпросмотра, подтверждение удаления модели&lt;/li&gt;&lt;li&gt;Полсотни исправлений из трёх независимых ревизий&lt;/li&gt;&lt;/ul&gt;</description>
-      <enclosure url="https://github.com/mikwiseman/wai-dictation/releases/download/v0.2.0-beta.1/WaiDictation-0.2.0.dmg" length="3198884" type="application/octet-stream" sparkle:edSignature="RG1hss8SBPRJaTKHVPcvp+IlcdR87RxWEbiVUuQJwfzvH+nly9bbT9nlZFBpENSJDDeyJ8Lf6/WhDcUKmMqMCQ==" />
+      <description>&lt;p&gt;&amp;lt;h2&amp;gt;0.2.1&amp;lt;/h2&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;ul&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Keyboard shortcuts that share your dictation modifier (Ctrl+C with Left Control, Cmd+C with Right Command) no longer start phantom recordings, and two shortcuts in a row no longer enable hands-free mode silently.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Live transcription preview while you speak, with a microphone-level indicator and a &amp;quot;no sound detected&amp;quot; hint.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;li&amp;gt;Recognition language control: Automatic plus 29 languages; interface is now fully in English; the dictionary learns terms from your corrections.&amp;lt;/li&amp;gt;&lt;/p&gt;&lt;p&gt;&amp;lt;/ul&amp;gt;&lt;/p&gt;</description>
+      <enclosure url="https://github.com/mikwiseman/wai-dictation/releases/download/v0.2.1-beta.1/WaiDictation-0.2.1.dmg" length="3199416" type="application/octet-stream" sparkle:edSignature="yUBVNtoqZ+nn5F5p4AYX2cbAURzmlQc//8zcYafZrSAlwryvQuXOxfOlnqRNecfi/9/qWEk9CykXmv530dIXDg==" />
     </item>
-  </channel>
-</rss>
+    
