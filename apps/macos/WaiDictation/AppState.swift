@@ -43,6 +43,10 @@ public struct AppEnvironment {
     /// Единственный production instance движка. В тестах `nil`: там ASR
     /// подставлен через `transcribe` и настоящая модель не нужна.
     public var localTranscriber: LocalTranscriber?
+    /// Чем читать поле, в которое вставили. Единственное, что приложение читает
+    /// у чужих окон, — поэтому шов есть: «выключено — значит не читаем» иначе
+    /// нечем доказать, а доказывать это придётся в README.
+    public var focusedFieldReader: any FocusedFieldReading
 
     public init(
         defaults: UserDefaults,
@@ -58,7 +62,8 @@ public struct AppEnvironment {
         modelDownloader: any ModelDownloading,
         workspaceNotifications: NotificationCenter,
         notifications: NotificationCenter,
-        localTranscriber: LocalTranscriber? = nil
+        localTranscriber: LocalTranscriber? = nil,
+        focusedFieldReader: any FocusedFieldReading = SystemFocusedFieldReader()
     ) {
         self.defaults = defaults
         self.paths = paths
@@ -74,6 +79,7 @@ public struct AppEnvironment {
         self.workspaceNotifications = workspaceNotifications
         self.notifications = notifications
         self.localTranscriber = localTranscriber
+        self.focusedFieldReader = focusedFieldReader
     }
 
     /// Настоящие края — то, из чего собирается работающее приложение.
@@ -235,10 +241,17 @@ public final class AppState: ObservableObject {
     private var silenceHintTask: Task<Void, Never>?
 
     /// Наблюдатель правок вставленного текста — учит словарь автоматически.
-    private let editWatcher = EditLearningWatcher()
+    private let editWatcher: EditLearningWatcher
 
     /// Учиться ли на правках вставленного текста. Читается только то поле,
     /// куда приложение само вставило, и только в первые полминуты.
+    ///
+    /// **По умолчанию выключено.** Это единственное место, где приложение
+    /// заглядывает в содержимое чужого окна, — а обещание продукта звучит как
+    /// «читаем ровно bundle id активного приложения: не экран, не содержимое».
+    /// Пока тумблер стоял в `true` и его не было в настройках, обещание было
+    /// ложным, и человек не имел способа это заметить. Включение — осознанное
+    /// действие человека, а не наш дефолт.
     @Published public var learnFromEdits: Bool {
         didSet {
             guard oldValue != learnFromEdits else { return }
@@ -336,9 +349,15 @@ public final class AppState: ObservableObject {
         showLivePreview = environment.defaults.object(forKey: Self.showLivePreviewKey) == nil
             ? true
             : environment.defaults.bool(forKey: Self.showLivePreviewKey)
-        learnFromEdits = environment.defaults.object(forKey: Self.learnFromEditsKey) == nil
-            ? true
-            : environment.defaults.bool(forKey: Self.learnFromEditsKey)
+        // Наблюдатель — раньше флага: его `didSet` обращается к наблюдателю, и
+        // хотя при инициализации наблюдатели свойств не срабатывают, порядок,
+        // который читается как безопасный, безопаснее порядка, который надо
+        // держать в голове.
+        editWatcher = EditLearningWatcher(reader: environment.focusedFieldReader)
+        // Отсутствие ключа = выключено: `bool(forKey:)` даёт false. Это
+        // сознательно отличается от `showLivePreview` выше — тот украшение и
+        // включён по умолчанию, а этот читает чужое окно.
+        learnFromEdits = environment.defaults.bool(forKey: Self.learnFromEditsKey)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         paths = environment.paths
         permissions = environment.permissions

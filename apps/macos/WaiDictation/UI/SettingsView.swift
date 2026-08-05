@@ -91,6 +91,17 @@ private struct GeneralSettings: View {
             }
 
             Section {
+                // Единственное место, где приложение читает содержимое чужого
+                // окна. Выключено по умолчанию, и подпись говорит прямо что
+                // именно читается — иначе выбор не осознанный.
+                Toggle("Learn from your edits", isOn: $state.learnFromEdits)
+                    .accessibilityHint("Reads back the field it pasted into, to learn words you fix by hand")
+                Text("After pasting, Wai Dictation re-reads that one text field twice — at 8 and 25 seconds — to see whether you corrected a word, and adds the pair to your dictionary. It reads only the field it pasted into, only in that window, and nothing leaves your Mac. Off by default: this is the one thing the app reads inside another app's window.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Picker("Recognition language", selection: $state.recognitionLanguage) {
                     Text("Automatic — recommended").tag(String?.none)
                     ForEach(RecognitionLanguages.options) { option in

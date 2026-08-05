@@ -6,29 +6,35 @@ import Foundation
 ///
 /// Это единственное, что приложение читает у чужих окон: значение ровно того
 /// поля, куда оно само вставило текст, и ровно в окне обучения — чтобы выучить
-/// правки человека. Ничего другого на экране не читается никогда; выключается
-/// одним переключателем в настройках.
+/// правки человека. Ничего другого на экране не читается никогда.
+///
+/// Край системы, а не деталь: подставляется через `AppEnvironment`, как микрофон
+/// и вставка. Обещание «выключено — значит поле не читается» иначе непроверяемо,
+/// а именно непроверяемость и позволила ему полгода быть неверным: тумблер
+/// существовал только в этом комментарии, а в настройках его не было.
 @MainActor
-protocol FocusedFieldReading {
+public protocol FocusedFieldReading {
     /// Снимок сфокусированного поля. `nil` — поля нет или оно не читается.
     func captureFocusedField() -> FocusedFieldHandle?
 }
 
 /// Ручка поля: перечитывает значение, пока поле живо.
 @MainActor
-final class FocusedFieldHandle {
+public final class FocusedFieldHandle {
     private let read: () -> String?
 
-    init(read: @escaping () -> String?) {
+    public init(read: @escaping () -> String?) {
         self.read = read
     }
 
-    func value() -> String? { read() }
+    public func value() -> String? { read() }
 }
 
 @MainActor
-struct SystemFocusedFieldReader: FocusedFieldReading {
-    func captureFocusedField() -> FocusedFieldHandle? {
+public struct SystemFocusedFieldReader: FocusedFieldReading {
+    public init() {}
+
+    public func captureFocusedField() -> FocusedFieldHandle? {
         let systemWide = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(

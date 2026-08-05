@@ -366,11 +366,27 @@ final class FakeAccessibilityManager: AccessibilityManaging {
 /// каким приложение видит компьютер. Центры уведомлений здесь свои, не
 /// системные: проверка не должна ни слышать настоящий сон машины, ни будить
 /// чужих подписчиков.
+/// Подставное поле чужого приложения: считает, сколько раз в него заглянули.
+///
+/// Считаем именно захваты, а не результат: обещание «выключено — значит не
+/// читаем» ломается уже на обращении к полю, даже если прочитанное выбросить.
+@MainActor
+final class FakeFocusedField: FocusedFieldReading {
+    var value: String?
+    private(set) var captured = 0
+
+    func captureFocusedField() -> FocusedFieldHandle? {
+        captured += 1
+        return FocusedFieldHandle { [weak self] in self?.value }
+    }
+}
+
 @MainActor
 final class AppHarness {
     let root: URL
     let suiteName: String
     let defaults: UserDefaults
+    let focusedField = FakeFocusedField()
     let permissions = FakePermissions()
     let accessibilityManager = FakeAccessibilityManager()
     let monitor = FakeHotkeyMonitor()
@@ -486,7 +502,8 @@ final class AppHarness {
                 modelDownloader: downloader,
                 workspaceNotifications: workspaceNotifications,
                 notifications: notifications,
-                localTranscriber: warmUpEngine.map { LocalTranscriber(engine: $0) }
+                localTranscriber: warmUpEngine.map { LocalTranscriber(engine: $0) },
+                focusedFieldReader: focusedField
             )
         )
     }

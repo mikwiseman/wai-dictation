@@ -604,6 +604,80 @@ final class AppStateTests: XCTestCase {
         ), 0)
     }
 
+    func testОбучениеНаПравкахПоУмолчаниюВыключено() {
+        let state = makeState()
+
+        XCTAssertFalse(
+            state.learnFromEdits,
+            """
+            Обучение на правках перечитывает через Accessibility содержимое поля \
+            ЧУЖОГО приложения. Пока оно включено по умолчанию, обещание «читаем ровно \
+            bundle id — не экран, не содержимое» ложное. Включать это вправе только человек.
+            """
+        )
+    }
+
+    func testОбучениеНаПравкахСохраняетсяИПереживаетПерезапуск() {
+        let state = makeState()
+
+        state.learnFromEdits = true
+        XCTAssertTrue(harness.defaults.bool(forKey: AppState.learnFromEditsKey))
+
+        // «Перезапуск»: новый AppState с теми же defaults.
+        XCTAssertTrue(makeState().learnFromEdits, "Осознанный выбор человека не должен сбрасываться")
+
+        state.learnFromEdits = false
+        XCTAssertFalse(makeState().learnFromEdits)
+    }
+
+    /// Выключенный тумблер обязан означать «поле не читается», а не «прочитали и промолчали».
+    ///
+    /// Разница видна только снаружи: у наблюдателя нет наблюдаемого следа, кроме
+    /// самого обращения к полю. Поэтому считаем захваты, а не результат.
+    func testВыключенноеОбучениеНеЧитаетЧужоеПоле() async throws {
+        try installModelMarker()
+        harness.transcription.text = "Открой поуст герз"
+        let state = makeState()
+        state.learnFromEdits = false
+        await state.refreshModelState()
+
+        try await dictateOnce(state)
+
+        XCTAssertEqual(
+            harness.focusedField.captured, 0,
+            "Тумблер выключен — приложение не имеет права заглядывать в чужое поле"
+        )
+    }
+
+    /// Положительный контроль к предыдущему тесту: без него он пройдёт и на
+    /// сломанной проводке, где поле не читается никогда.
+    func testВключённоеОбучениеЧитаетПолеОдинРаз() async throws {
+        try installModelMarker()
+        harness.transcription.text = "Открой поуст герз"
+        let state = makeState()
+        state.learnFromEdits = true
+        await state.refreshModelState()
+
+        try await dictateOnce(state)
+
+        XCTAssertEqual(harness.focusedField.captured, 1)
+    }
+
+    /// Одна полная диктовка: нажали, дождались записи, отпустили, дождались вставки.
+    private func dictateOnce(_ state: AppState) async throws {
+        monitor.onPress?()
+        for _ in 0..<40 where state.dictationState != .listening {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        monitor.onRelease?()
+        for _ in 0..<200 where state.lastDictation == nil {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        _ = try XCTUnwrap(state.lastDictation)
+    }
+
     func testЯзыкРаспознаванияСохраняетсяИПереживаетПерезапуск() {
         let state = makeState()
         XCTAssertNil(state.recognitionLanguage, "По умолчанию — автоопределение")
