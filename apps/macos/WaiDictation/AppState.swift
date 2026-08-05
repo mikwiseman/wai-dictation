@@ -234,6 +234,21 @@ public final class AppState: ObservableObject {
     /// Отложенная подсказка «нет звука» — отменяется первым же живым сигналом.
     private var silenceHintTask: Task<Void, Never>?
 
+    /// Наблюдатель правок вставленного текста — учит словарь автоматически.
+    private let editWatcher = EditLearningWatcher()
+
+    /// Учиться ли на правках вставленного текста. Читается только то поле,
+    /// куда приложение само вставило, и только в первые полминуты.
+    @Published public var learnFromEdits: Bool {
+        didSet {
+            guard oldValue != learnFromEdits else { return }
+            defaults.set(learnFromEdits, forKey: Self.learnFromEditsKey)
+            if !learnFromEdits { editWatcher.cancel() }
+        }
+    }
+    nonisolated static let learnFromEditsKey = "learnFromEdits"
+
+
     /// Живой предпросмотр распознавания в панели. Украшение — выключается.
     @Published public var showLivePreview: Bool {
         didSet {
@@ -321,6 +336,9 @@ public final class AppState: ObservableObject {
         showLivePreview = environment.defaults.object(forKey: Self.showLivePreviewKey) == nil
             ? true
             : environment.defaults.bool(forKey: Self.showLivePreviewKey)
+        learnFromEdits = environment.defaults.object(forKey: Self.learnFromEditsKey) == nil
+            ? true
+            : environment.defaults.bool(forKey: Self.learnFromEditsKey)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         paths = environment.paths
         permissions = environment.permissions
@@ -469,8 +487,13 @@ public final class AppState: ObservableObject {
                 self?.isHandsFreeActive = active
             }
             controller.onTextInserted = { [weak self] text in
-                self?.successfulDictationCount += 1
-                self?.lastDictation = LastDictation(insertedText: text)
+                guard let self else { return }
+                self.successfulDictationCount += 1
+                self.lastDictation = LastDictation(insertedText: text)
+                guard self.learnFromEdits else { return }
+                self.editWatcher.beginWatching(inserted: text) { [weak self] original, edited in
+                    self?.learn(original: original, edited: edited)
+                }
             }
             self.controller = controller
         } catch {
@@ -1427,10 +1450,32 @@ public final class AppState: ObservableObject {
     /// запись затёрла бы его целиком — и человек потерял бы всё накопленное.
     public var isDictionaryEditable: Bool { dictionaryProblem == nil }
 
-    /// Выучить правки последней диктовки: пословный diff с консервативным
-    /// фильтром — учатся только термины (латиница, бренд-регистр), правки
-    /// обычной речи не проходят. Возвращает, сколько замен добавлено.
+    /// Выучить правку вставленного текста, замеченную в целевом приложении.
+    /// Пословный diff с консервативным фильтром: учатся только термины
+    /// (смена письменности, бренд-регистр), правки речи не проходят.
     @discardableResult
+    public func learn(original: String, edited: String) -> Int {
+        let proposals = CorrectionLearning.propose(
+            original: original,
+            edited: edited,
+            existing: replacements
+        )
+        for proposal in proposals {
+            addReplacement(spoken: proposal.spoken, written: proposal.written)
+        }
+        if !proposals.isEmpty {
+            notify(
+                DictationNotice(
+                    kind: .info,
+                    message: proposals.count == 1
+                        ? "Learned 1 replacement from your edit."
+                        : "Learned \(proposals.count) replacements from your edit."
+                )
+            )
+        }
+        return proposals.count
+    }
+
     public func learnCorrections(editedText: String) -> Int {
         guard let lastDictation else { return 0 }
         let proposals = CorrectionLearning.propose(

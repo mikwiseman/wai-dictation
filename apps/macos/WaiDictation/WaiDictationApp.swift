@@ -58,11 +58,6 @@ struct WaiDictationApp: App {
         }
         .windowResizability(.contentSize)
 
-        Window("Fix Last Dictation", id: "fix-dictation") {
-            FixDictationView(state: state)
-        }
-        .windowResizability(.contentSize)
-
         Settings {
             SettingsView(state: state)
         }

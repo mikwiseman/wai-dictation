@@ -63,21 +63,6 @@ struct MenuContent: View {
             Button("Delete recording") { state.deleteRecoveredRecording() }
         }
 
-        // Правка последней диктовки. Пункт появляется только после успешной
-        // вставки: до неё окно всё равно показало бы «править нечего».
-        //
-        // Без этого пункта окно «Fix Last Dictation» не открывалось ниоткуда:
-        // сцена в приложении была, а входа в неё не было — в строке меню его
-        // нет, а главное меню у LSUIElement-приложения показывается, только
-        // когда открыто хоть одно окно. Целая функция была недостижима.
-        if state.lastDictation != nil {
-            Divider()
-            Button("Fix Last Dictation…") {
-                openWindow(id: "fix-dictation")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        }
-
         Divider()
 
         Button("Settings…") { openSettings() }
