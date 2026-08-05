@@ -29,6 +29,80 @@ private func event(
 }
 
 final class HotkeyGestureMachineTests: XCTestCase {
+    // MARK: - Шорткаты не диктовка
+
+    /// Ctrl+C: модификатор нажат, затем буква. Это шорткат, а не диктовка —
+    /// начатый жест обрывается тихо, без вставки и без сообщений.
+    func testКлавишаВоВремяУдержанияОбрываетЖест() {
+        var machine = HotkeyGestureMachine(hotkey: .leftControl)
+
+        XCTAssertEqual(
+            machine.handle(event(.leftControl, flags: Bits.control | Bits.leftControlSide)),
+            .press
+        )
+        XCTAssertEqual(machine.handleForeignKeyDown(), .abortShortcut)
+        // Отпускание модификатора после шортката не вставляет ничего.
+        XCTAssertEqual(machine.handle(event(.leftControl, flags: 0, after: 0.1)), .none)
+    }
+
+    /// Ctrl+C, затем Ctrl+V в пределах окна двойного нажатия. Раньше второе
+    /// нажатие включало запись без удержания — фоном и навсегда.
+    func testДваШорткатаПодрядНеВключаютЗаписьБезУдержания() {
+        var machine = HotkeyGestureMachine(hotkey: .leftControl)
+
+        _ = machine.handle(event(.leftControl, flags: Bits.control | Bits.leftControlSide))
+        XCTAssertEqual(machine.handleForeignKeyDown(), .abortShortcut)
+        _ = machine.handle(event(.leftControl, flags: 0, after: 0.08))
+
+        // Второй шорткат сразу следом: press, но НЕ doubleTap.
+        XCTAssertEqual(
+            machine.handle(
+                event(.leftControl, flags: Bits.control | Bits.leftControlSide, after: 0.15)
+            ),
+            .press
+        )
+    }
+
+    /// Аккорд из модификаторов (⌘ уже зажат, добавили Ctrl) — не нажатие:
+    /// человек тянется к Cmd+Ctrl-шорткату, а не к диктовке.
+    func testАккордМодификаторовНеНачинаетДиктовку() {
+        var machine = HotkeyGestureMachine(hotkey: .leftControl)
+
+        XCTAssertEqual(
+            machine.handle(
+                event(
+                    .leftControl,
+                    flags: Bits.command | Bits.leftCommandSide | Bits.control | Bits.leftControlSide
+                )
+            ),
+            .none
+        )
+    }
+
+    /// Второй модификатор, добавленный ВО ВРЕМЯ удержания, тоже обрывает жест.
+    func testМодификаторВоВремяУдержанияОбрываетЖест() {
+        var machine = HotkeyGestureMachine(hotkey: .leftControl)
+
+        _ = machine.handle(event(.leftControl, flags: Bits.control | Bits.leftControlSide))
+        // Пришло событие чужого модификатора: флаги теперь содержат ⌘ и Ctrl.
+        let chord = HotkeyEvent(
+            keyCode: 55,
+            rawFlags: Bits.command | Bits.leftCommandSide | Bits.control | Bits.leftControlSide,
+            at: start.addingTimeInterval(0.05)
+        )
+        XCTAssertEqual(machine.handle(chord), .abortShortcut)
+        XCTAssertEqual(machine.handle(event(.leftControl, flags: 0, after: 0.2)), .none)
+    }
+
+    /// Обрыв во время записи без удержания невозможен: там модификатор давно
+    /// отпущен, и шорткаты человека к жесту не относятся.
+    func testКлавишиВоВремяЗаписиБезУдержанияНеОбрываютЕё() {
+        var machine = HotkeyGestureMachine(hotkey: .leftControl)
+        machine.isHandsFreeActive = true
+
+        XCTAssertEqual(machine.handleForeignKeyDown(), .none)
+    }
+
     // MARK: - Удержание
 
     func testУдержаниеДаётНажатиеИОтпускание() {

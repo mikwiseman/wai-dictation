@@ -57,6 +57,34 @@ public enum DictationHotkey: String, CaseIterable, Sendable, Codable {
     func isPressed(in rawFlags: UInt) -> Bool {
         rawFlags & sideMask != 0
     }
+
+    /// Все общие флаги модификаторов, по которым строятся шорткаты.
+    private static let chordMask: UInt =
+        NSEvent.ModifierFlags.command.rawValue
+        | NSEvent.ModifierFlags.control.rawValue
+        | NSEvent.ModifierFlags.option.rawValue
+        | NSEvent.ModifierFlags.shift.rawValue
+        | NSEvent.ModifierFlags.function.rawValue
+
+    /// Общий флаг вида этого модификатора («какой-то Command зажат»).
+    private var kindMask: UInt {
+        switch self {
+        case .rightCommand: return NSEvent.ModifierFlags.command.rawValue
+        case .rightOption: return NSEvent.ModifierFlags.option.rawValue
+        case .leftControl: return NSEvent.ModifierFlags.control.rawValue
+        case .fn: return NSEvent.ModifierFlags.function.rawValue
+        }
+    }
+
+    /// Нажат ли модификатор ОДИН, без спутников.
+    ///
+    /// «Cmd уже зажат, добавили Ctrl» — это путь к шорткату Cmd+Ctrl+…, а не
+    /// к диктовке. Считать такой аккорд нажатием значило запускать запись
+    /// фоном на каждом сложном шорткате.
+    func isExclusivelyPressed(in rawFlags: UInt) -> Bool {
+        guard isPressed(in: rawFlags) else { return false }
+        return rawFlags & Self.chordMask & ~kindMask == 0
+    }
 }
 
 // MARK: - Событие
@@ -97,6 +125,10 @@ struct HotkeyGestureMachine {
         case doubleTap
         /// Нажатие во время записи без удержания — просьба остановить.
         case stopHandsFree
+        /// Во время удержания нажали другую клавишу: это шорткат, а не
+        /// диктовка. Начатую запись надо оборвать тихо — без вставки, без
+        /// сообщений и без участия в двойном нажатии.
+        case abortShortcut
     }
 
     private(set) var hotkey: DictationHotkey
@@ -113,6 +145,8 @@ struct HotkeyGestureMachine {
     private(set) var isHeld = false
     private var lastTapAt: Date?
     private var pressedAt: Date?
+    /// Текущее удержание оказалось шорткатом: отпускание ничего не значит.
+    private var abortedByShortcut = false
 
     init(hotkey: DictationHotkey, doubleTapWindow: TimeInterval = 0.35) {
         self.hotkey = hotkey
@@ -140,15 +174,41 @@ struct HotkeyGestureMachine {
         isHeld = false
         lastTapAt = nil
         pressedAt = nil
+        abortedByShortcut = false
+    }
+
+    /// Во время удержания нажали обычную клавишу — это шорткат.
+    mutating func handleForeignKeyDown() -> Action {
+        guard isHeld, !abortedByShortcut, !isHandsFreeActive else { return .none }
+        return abortCurrentHold()
+    }
+
+    private mutating func abortCurrentHold() -> Action {
+        abortedByShortcut = true
+        lastTapAt = nil
+        return .abortShortcut
     }
 
     mutating func handle(_ event: HotkeyEvent) -> Action {
-        guard event.keyCode == hotkey.keyCode else { return .none }
+        guard event.keyCode == hotkey.keyCode else {
+            // Чужой модификатор. Если во время удержания флаги превратились в
+            // аккорд (⌘ добавился к зажатому Ctrl) — человек тянется к
+            // шорткату, и жест обрывается так же, как от обычной клавиши.
+            if isHeld, !abortedByShortcut, !isHandsFreeActive,
+               hotkey.isPressed(in: event.rawFlags),
+               !hotkey.isExclusivelyPressed(in: event.rawFlags) {
+                return abortCurrentHold()
+            }
+            return .none
+        }
 
         let pressed = hotkey.isPressed(in: event.rawFlags)
 
         if pressed, !isHeld {
+            // Аккорд с самого начала (Cmd уже зажат) — нажатием не считается.
+            guard hotkey.isExclusivelyPressed(in: event.rawFlags) else { return .none }
             isHeld = true
+            abortedByShortcut = false
             pressedAt = event.at
 
             if isHandsFreeActive {
@@ -167,6 +227,14 @@ struct HotkeyGestureMachine {
 
         if !pressed, isHeld {
             isHeld = false
+            if abortedByShortcut {
+                // Шорткат уже оборвал жест: отпускание не вставляет и не
+                // открывает окно двойного нажатия.
+                abortedByShortcut = false
+                pressedAt = nil
+                lastTapAt = nil
+                return .none
+            }
             let heldFor = pressedAt.map { event.at.timeIntervalSince($0) } ?? doubleTapWindow
             pressedAt = nil
             // В режиме без удержания отпускание ничего не значит: запись идёт
@@ -291,6 +359,8 @@ public protocol HotkeyMonitoring: AnyObject {
     var onDoubleTap: (() -> Void)? { get set }
     /// Одиночное нажатие, когда идёт запись без удержания, — просьба остановить.
     var onSingleTapWhileHandsFree: (() -> Void)? { get set }
+    /// Удержание оказалось шорткатом — оборвать запись тихо.
+    var onAbortShortcut: (() -> Void)? { get set }
     var onEscape: (() -> Void)? { get set }
 
     /// Идёт ли сейчас запись без удержания.
@@ -308,6 +378,7 @@ public final class GlobalHotkeyMonitor: HotkeyMonitoring {
     public var onRelease: (() -> Void)?
     public var onDoubleTap: (() -> Void)?
     public var onSingleTapWhileHandsFree: (() -> Void)?
+    public var onAbortShortcut: (() -> Void)?
     public var onEscape: (() -> Void)?
 
     public var isHandsFreeActive: Bool {
@@ -392,8 +463,13 @@ public final class GlobalHotkeyMonitor: HotkeyMonitoring {
     private func handleKeyDown(_ event: HotkeyEvent) {
         // Escape отменяет диктовку. Решает это `AppState`: пока диктовки нет,
         // Escape — обычная клавиша, и трогать её нельзя.
-        guard event.keyCode == UInt16(kVK_Escape) else { return }
-        onEscape?()
+        if event.keyCode == UInt16(kVK_Escape) {
+            onEscape?()
+            return
+        }
+        // Любая другая клавиша во время удержания модификатора — шорткат
+        // (Ctrl+C), а не диктовка: начатый жест обрывается тихо.
+        deliver(machine.handleForeignKeyDown())
     }
 
     private func deliver(_ action: HotkeyGestureMachine.Action) {
@@ -425,6 +501,7 @@ public final class GlobalHotkeyMonitor: HotkeyMonitoring {
             pendingRelease = nil
             onDoubleTap?()
         case .stopHandsFree: onSingleTapWhileHandsFree?()
+        case .abortShortcut: onAbortShortcut?()
         }
     }
 }

@@ -30,6 +30,35 @@ final class GlobalHotkeyMonitorTests: XCTestCase {
 
     // MARK: - Запуск
 
+    /// Ctrl+C поверх выбранного модификатора: keyDown обязан дойти до машины
+    /// и оборвать жест — иначе каждый шорткат превращается в фантомную
+    /// диктовку, а два подряд включают запись без удержания фоном.
+    func testЧужаяКлавишаВоВремяУдержанияОбрываетЗапись() {
+        let source = FakeHotkeyEventSource()
+        let monitor = GlobalHotkeyMonitor(source: source)
+        monitor.setHotkey(.leftControl)
+        var aborted = 0
+        var released = 0
+        monitor.onAbortShortcut = { aborted += 1 }
+        monitor.onRelease = { released += 1 }
+        monitor.start()
+
+        source.sendFlags(HotkeyEvent(
+            keyCode: DictationHotkey.leftControl.keyCode,
+            rawFlags: NSEvent.ModifierFlags.control.rawValue | 0x0000_0001,
+            at: Date()
+        ))
+        source.sendKeyDown(HotkeyEvent(keyCode: 8, rawFlags: 0, at: Date()))
+        source.sendFlags(HotkeyEvent(
+            keyCode: DictationHotkey.leftControl.keyCode,
+            rawFlags: 0,
+            at: Date().addingTimeInterval(0.1)
+        ))
+
+        XCTAssertEqual(aborted, 1, "Шорткат обязан оборвать жест ровно один раз")
+        XCTAssertEqual(released, 0, "После обрыва отпускание не вставляет")
+    }
+
     func testБезДоступаСлежениеНеНачинается() {
         source.isTrusted = false
 

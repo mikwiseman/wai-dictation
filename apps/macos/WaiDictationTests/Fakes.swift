@@ -609,6 +609,7 @@ final class FakeHotkeyMonitor: HotkeyMonitoring {
     var onRelease: (() -> Void)?
     var onDoubleTap: (() -> Void)?
     var onSingleTapWhileHandsFree: (() -> Void)?
+    var onAbortShortcut: (() -> Void)?
     var onEscape: (() -> Void)?
 
     var isHandsFreeActive = false

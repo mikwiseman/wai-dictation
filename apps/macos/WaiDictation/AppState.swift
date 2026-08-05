@@ -874,6 +874,12 @@ public final class AppState: ObservableObject {
         hotkeyMonitor.onSingleTapWhileHandsFree = { [weak self] in
             self?.controller?.stopHandsFree()
         }
+        hotkeyMonitor.onAbortShortcut = { [weak self] in
+            // Удержание оказалось шорткатом (Ctrl+C поверх выбранной клавиши):
+            // запись обрывается тихо — без вставки, без сообщений и без звука
+            // ошибки. Человек нажимал шорткат, а не диктовал.
+            self?.controller?.cancel()
+        }
         hotkeyMonitor.onEscape = { [weak self] in
             // Escape отменяет только идущую диктовку. В остальное время это
             // обычная клавиша, и перехватывать её нельзя.

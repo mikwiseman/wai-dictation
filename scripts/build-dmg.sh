@@ -360,7 +360,9 @@ mkdir -p "$STAGING"
 cp -R "$APP_PATH" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-VERSION=$(defaults read "$(pwd)/$APP_PATH/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "0.1.0")
+# PlistBuddy, а не defaults: defaults молча падал на этом пути, и фолбэк
+# подписывал образ чужой версией — релиз v0.1.0 с приложением 0.2.0 внутри.
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
 DMG_PATH="$DMG_DIR/$DMG_BASENAME-$VERSION.dmg"
 
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH" >/dev/null
