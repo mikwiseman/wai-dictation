@@ -18,22 +18,48 @@ public struct DictionaryReplacement: Codable, Sendable, Equatable, Identifiable 
     /// съедала вместе с термином. Замер этого стоил: настоящих русских слов в
     /// радиусе поражения набора было 89, из них четыре семьи — обычная речь.
     public var inflects: Bool
+    /// Держать ли термин подальше от акустического подсказчика.
+    ///
+    /// Свойство записи, а не список в чужом файле. Есть термины, чьё
+    /// кириллическое звучание — обычное русское слово: «deploy» ловит «тёплой»,
+    /// «Sentry» — «в центре», «commit» — «комету». Похожесть библиотеки видит
+    /// сквозь алфавиты (`sim("центре", Sentry) = 0.83`), а англоязычная
+    /// CTC-модель всегда оценит латинский термин выше кириллического слова на
+    /// той же записи. Хуже того, «центре» в честной русской фразе и «центре» на
+    /// месте Sentry — один и тот же текст, и никакой порог их не разделит.
+    /// Такие термины остаются словарю замен, чьи правила обычную речь не
+    /// трогают (docs/benchmarks.md).
+    ///
+    /// Раньше это был захардкоженный список из трёх слов в `VocabularyBoost`.
+    /// Собственные термины человека в него не попадали никогда, а добавить свой
+    /// он не мог вовсе.
+    public var noAcousticBoost: Bool
 
-    public init(id: UUID = UUID(), spoken: String, written: String, inflects: Bool = true) {
+    public init(
+        id: UUID = UUID(),
+        spoken: String,
+        written: String,
+        inflects: Bool = true,
+        noAcousticBoost: Bool = false
+    ) {
         self.id = id
         self.spoken = spoken
         self.written = written
         self.inflects = inflects
+        self.noAcousticBoost = noAcousticBoost
     }
 
-    /// Свой разбор нужен ровно из-за `inflects`: в словарях, записанных до его
-    /// появления, ключа нет. Отсутствие ключа — это «склоняется», как и было.
+    /// Свой разбор нужен из-за `inflects` и `noAcousticBoost`: в словарях,
+    /// записанных до их появления, ключей нет. Отсутствие `inflects` — это
+    /// «склоняется», как и было; отсутствие `noAcousticBoost` — «бустится»,
+    /// потому что раньше решал список, а не запись.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
         spoken = try container.decode(String.self, forKey: .spoken)
         written = try container.decode(String.self, forKey: .written)
         inflects = try container.decodeIfPresent(Bool.self, forKey: .inflects) ?? true
+        noAcousticBoost = try container.decodeIfPresent(Bool.self, forKey: .noAcousticBoost) ?? false
     }
 }
 

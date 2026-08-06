@@ -400,11 +400,24 @@ private struct DictionarySettings: View {
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                             Text(replacement.written)
+                            if replacement.noAcousticBoost {
+                                Spacer(minLength: 8)
+                                // Признак виден в списке, потому что иначе он
+                                // необъясним: человек отметил термин, ничего не
+                                // изменилось на вид, и признак забывается.
+                                Text("text only")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                         // Строка читается целиком: «сентри», стрелка и «Sentry»
                         // по отдельности не значат ничего.
                         .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Heard as “\(replacement.spoken)”, written as “\(replacement.written)”")
+                        .accessibilityLabel(
+                            replacement.noAcousticBoost
+                                ? "Heard as “\(replacement.spoken)”, written as “\(replacement.written)”, text only — not used to help recognition"
+                                : "Heard as “\(replacement.spoken)”, written as “\(replacement.written)”"
+                        )
                     }
                     .onDelete(perform: state.removeReplacements)
                 }

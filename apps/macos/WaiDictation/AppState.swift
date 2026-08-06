@@ -1358,9 +1358,7 @@ public final class AppState: ObservableObject {
                 // стартовый набор.
                 try await transcriber.prepareVocabulary(
                     modelDirectory: vocabularyDirectory,
-                    boost: .withUserReplacements(
-                        replacements.map { (spoken: $0.spoken, written: $0.written) }
-                    )
+                    boost: .withUserReplacements(replacements)
                 )
             }
             isEngineReady = true
@@ -1405,12 +1403,12 @@ public final class AppState: ObservableObject {
     /// подсказчика переживают её без перезагрузки.
     private func rebuildVocabularyBoost() {
         guard isEngineReady, let transcriber, let vocabularyDirectory else { return }
-        let pairs = replacements.map { (spoken: $0.spoken, written: $0.written) }
+        let currentReplacements = replacements
         Task { [weak self] in
             do {
                 try await transcriber.prepareVocabulary(
                     modelDirectory: vocabularyDirectory,
-                    boost: .withUserReplacements(pairs)
+                    boost: .withUserReplacements(currentReplacements)
                 )
             } catch {
                 // Акустика не пересобралась — текстовые замены уже работают, и

@@ -66,27 +66,30 @@ public struct VocabularyBoost: Sendable, Equatable {
 }
 
 extension VocabularyBoost {
-    /// Термины, чьё кириллическое звучание — обычное русское слово. В
-    /// акустический подсказчик они не идут вовсе: похожесть библиотеки видит
-    /// сквозь алфавиты, а англоязычная CTC-модель всегда оценит латинский
-    /// термин выше кириллического слова на той же записи. «Deploy» ловил
-    /// «тёплой», «Sentry» — «в центре», «commit» — «комету»; хуже того,
-    /// «центре» в честной русской фразе и «центре» на месте Sentry — один и
-    /// тот же текст, и никакой порог их не разделит. Эти термины остаются
-    /// словарю замен, чьи правила обычную речь не трогают (docs/benchmarks.md).
-    static let unboostableWritten: Set<String> = ["deploy", "Sentry", "commit"]
+    /// Термины, которые человек держит подальше от акустики.
+    ///
+    /// Раньше здесь лежал захардкоженный список из трёх слов. Теперь решает
+    /// сама запись — `DictionaryReplacement.noAcousticBoost`, — потому что у
+    /// каждого свои термины: «касса» ловит «Kassa», «сани» — «Sunny», и наш
+    /// список из трёх слов про них ничего не знал. Причина, по которой такие
+    /// термины вообще исключаются, — в документации к самому флагу.
+    static func unboostable(_ replacements: [DictionaryReplacement]) -> Set<String> {
+        Set(replacements.filter(\.noAcousticBoost).map(\.written))
+    }
 
     /// Набор по словарю пользователя: стартовые термины плюс его собственные
-    /// замены — включая выученные из правок. Опасные термины отфильтрованы
-    /// тем же правилом, что и в стартовом наборе: пользовательская запись
-    /// «деплой → deploy» не имеет права вернуть deploy в акустику.
+    /// замены — включая выученные из правок.
     public static func withUserReplacements(
-        _ pairs: [(spoken: String, written: String)]
+        _ replacements: [DictionaryReplacement]
     ) -> VocabularyBoost {
         let defaults = developerDefault()
         let known = Set(defaults.terms.map { $0.text.lowercased() })
-        let userTerms = pairs
-            .filter { !unboostableWritten.contains($0.written) }
+        // Отмеченное человеком плюс отмеченное в заготовке: пользовательская
+        // запись «деплой → deploy» не имеет права вернуть deploy в акустику
+        // только потому, что в ней самой галочки нет.
+        let blocked = unboostable(replacements).union(unboostable(StarterDictionary.developer))
+        let userTerms = replacements
+            .filter { !blocked.contains($0.written) }
             .filter { $0.written.contains { $0.isLetter && $0.isASCII } }
             .filter { !known.contains($0.written.lowercased()) }
             .map { Term(text: $0.written, aliases: [$0.spoken]) }
@@ -96,10 +99,12 @@ extension VocabularyBoost {
     /// Готовый набор для словаря разработчика: латинский термин плюс его
     /// кириллические написания как псевдонимы — мост от звука к латинице.
     public static func developerDefault() -> VocabularyBoost {
-        let grouped = Dictionary(grouping: StarterDictionary.developer, by: \.written)
+        let starter = StarterDictionary.developer
+        let blocked = unboostable(starter)
+        let grouped = Dictionary(grouping: starter, by: \.written)
         return VocabularyBoost(
             terms: grouped
-                .filter { !unboostableWritten.contains($0.key) }
+                .filter { !blocked.contains($0.key) }
                 .map { written, group in
                     Term(text: written, aliases: group.map(\.spoken))
                 }

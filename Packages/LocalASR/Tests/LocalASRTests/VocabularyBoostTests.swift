@@ -1,3 +1,4 @@
+import DictationCore
 import XCTest
 @testable import LocalASR
 
@@ -61,16 +62,24 @@ final class VocabularyBoostTests: XCTestCase {
     /// акустический набор с теми же предохранителями, что и стартовые.
     func testПользовательскиеЗаменыПополняютНаборСФильтрами() {
         let boost = VocabularyBoost.withUserReplacements([
-            (spoken: "поуст герз", written: "Postgres"),      // дубликат стартового — не плодится
-            (spoken: "графана", written: "Grafana"),          // новый термин — учится
-            (spoken: "деплой", written: "deploy"),            // опасный — никогда
-            (spoken: "как слышится", written: "как пишется"), // без латиницы — не термин
+            // дубликат стартового — не плодится
+            DictionaryReplacement(spoken: "поуст герз", written: "Postgres"),
+            // новый термин — учится
+            DictionaryReplacement(spoken: "графана", written: "Grafana"),
+            // опасный — заготовка держит на нём флаг, и запись человека его
+            // не отменяет
+            DictionaryReplacement(spoken: "деплой", written: "deploy"),
+            // без латиницы — не термин
+            DictionaryReplacement(spoken: "как слышится", written: "как пишется"),
+            // свой опасный термин: раньше человек не мог исключить ничего
+            DictionaryReplacement(spoken: "касса", written: "Kassa", noAcousticBoost: true),
         ])
 
         let texts = boost.terms.map(\.text)
         XCTAssertTrue(texts.contains("Grafana"))
         XCTAssertFalse(texts.contains("deploy"))
         XCTAssertFalse(texts.contains("как пишется"))
+        XCTAssertFalse(texts.contains("Kassa"), "человек отметил термин — в акустику он не идёт")
         XCTAssertEqual(texts.filter { $0.lowercased() == "postgres" }.count, 1)
         let grafana = boost.terms.first { $0.text == "Grafana" }
         XCTAssertEqual(grafana?.aliases, ["графана"])

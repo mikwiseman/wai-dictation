@@ -82,3 +82,52 @@ final class ShortRecordingPolicyTests: XCTestCase {
         XCTAssertTrue(DictationDurationPolicy.isWorthTranscribing(duration: 5))
     }
 }
+
+/// Признак «не бустить акустикой» живёт в данных заготовки.
+final class StarterDictionaryBoostFlagTests: XCTestCase {
+    /// Главный tripwire задачи.
+    ///
+    /// Хардкод убран из `VocabularyBoost`, и если признак не проставлен здесь,
+    /// deploy/Sentry/commit молча вернутся в акустику — то есть откатится
+    /// замер, который стоил отдельного дня.
+    func testDangerousTermsCarryTheFlagInTheData() {
+        let flagged = Set(
+            StarterDictionary.developer.filter(\.noAcousticBoost).map(\.written)
+        )
+        XCTAssertEqual(flagged, ["deploy", "Sentry", "commit"])
+    }
+
+    /// Все написания опасного термина отмечены, а не только первое: «коммит» и
+    /// «комет» ведут к одному `commit`, и пропуск любого вернул бы его обратно.
+    func testEverySpellingOfAFlaggedTermIsFlagged() {
+        for term in StarterDictionary.developer where ["deploy", "Sentry", "commit"].contains(term.written) {
+            XCTAssertTrue(term.noAcousticBoost, "\(term.spoken) → \(term.written)")
+        }
+    }
+
+    func testOrdinaryTermsAreStillBoosted() {
+        for term in StarterDictionary.developer where term.written == "Postgres" || term.written == "Docker" {
+            XCTAssertFalse(term.noAcousticBoost, term.written)
+        }
+    }
+
+    /// Словари, записанные до появления признака, читаются как «бустится» —
+    /// раньше решал список, а не запись.
+    func testOldDictionariesDecodeWithoutTheFlag() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","spoken":"графана","written":"Grafana"}
+        """
+        let decoded = try JSONDecoder().decode(DictionaryReplacement.self, from: Data(json.utf8))
+        XCTAssertFalse(decoded.noAcousticBoost)
+        XCTAssertTrue(decoded.inflects)
+    }
+
+    func testFlagSurvivesRoundTrip() throws {
+        let original = DictionaryReplacement(
+            spoken: "касса", written: "Kassa", inflects: false, noAcousticBoost: true
+        )
+        let data = try JSONEncoder().encode(original)
+        let restored = try JSONDecoder().decode(DictionaryReplacement.self, from: data)
+        XCTAssertEqual(restored, original)
+    }
+}

@@ -12,9 +12,32 @@ import Foundation
 public enum StarterDictionary {
     /// Термины разработчика.
     public static var developer: [DictionaryReplacement] {
-        inflecting.map { DictionaryReplacement(spoken: $0.0, written: $0.1) }
-            + literal.map { DictionaryReplacement(spoken: $0.0, written: $0.1, inflects: false) }
+        inflecting.map {
+            DictionaryReplacement(
+                spoken: $0.0,
+                written: $0.1,
+                noAcousticBoost: unboostable.contains($0.1)
+            )
+        }
+            + literal.map {
+                DictionaryReplacement(
+                    spoken: $0.0,
+                    written: $0.1,
+                    inflects: false,
+                    noAcousticBoost: unboostable.contains($0.1)
+                )
+            }
     }
+
+    /// Термины, чьё кириллическое звучание — обычное русское слово.
+    ///
+    /// Флаг живёт **в данных заготовки**, а не в фильтре на стороне подсказчика.
+    /// Разница не косметическая: убрать список из `VocabularyBoost` и не
+    /// проставить признак здесь — значит вернуть `deploy`, `Sentry` и `commit`
+    /// в акустику, то есть молча откатить замер, который стоил отдельного дня.
+    /// Подробности, почему именно эти три: `DictionaryReplacement.noAcousticBoost`
+    /// и docs/benchmarks.md.
+    private static let unboostable: Set<String> = ["deploy", "Sentry", "commit"]
 
     /// Термин в обычном русском написании — со всеми падежами.
     ///
