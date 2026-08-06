@@ -73,6 +73,29 @@ xcodebuild -project WaiDictation.xcodeproj -scheme WaiDictation \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
+### Если сборка встала на «Resolve Package Graph»
+
+Симптом: `xcodebuild` (и даже `xcodebuild -list`, который ничего не компилирует)
+висит бесконечно на 0% CPU после строки `Downloading binary artifact`. Кажется,
+что сломалась сеть или Xcode, — не сломано ни то, ни другое.
+
+Причина: SwiftPM спрашивает у Keychain учётные данные для хоста загрузки, а
+показать диалог некому — из терминала, по SSH или из агентской сессии. Запрос
+ждёт вечно. Sparkle приезжает бинарным XCFramework, поэтому попадаются на этом
+именно те, кто собирает приложение, а не пакеты.
+
+Проверить за четыре секунды и заодно вылечить:
+
+```bash
+swift build --package-path apps/macos --disable-keychain 2>/dev/null || \
+  (cd /tmp && swift build --disable-keychain)   # любой пакет с Sparkle
+```
+
+Достаточно один раз скачать артефакт с `--disable-keychain`: он ложится в общий
+кэш `~/Library/Caches/org.swift.swiftpm/artifacts`, и дальше `xcodebuild` берёт
+его оттуда и больше не висит. Диагностика, если симптом другой: `curl` и
+`URLSession` тянут тот же URL за секунды — значит сеть, VPN и MTU ни при чём.
+
 Если трогали распознавание или установку модели — прогоните ещё и проверку
 главного обещания. Ей нужна уже установленная модель, а идёт она пару секунд:
 
