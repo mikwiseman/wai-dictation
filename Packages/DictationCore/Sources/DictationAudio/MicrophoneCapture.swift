@@ -64,8 +64,13 @@ public actor MicrophoneCapture: AudioCapturing {
 
     /// Сколько прошло от запуска движка до первого реального кадра звука.
     ///
-    /// Это и есть та величина, из-за которой срезается первое слово.
-    public var startupLatency: Duration? {
+    /// Это и есть та величина, из-за которой срезается первое слово. Значение
+    /// считалось с самого начала, но его никто не читал: наружу оно выходит
+    /// через `AudioCapturing`, и только теперь у него появился потребитель.
+    ///
+    /// `stopRecording` эти отметки не сбрасывает — их обнуляет только новый
+    /// `startRecording`, поэтому читать после остановки законно.
+    public func startupLatency() async -> Duration? {
         guard let startedAt, let firstBufferAt else { return nil }
         return startedAt.duration(to: firstBufferAt)
     }

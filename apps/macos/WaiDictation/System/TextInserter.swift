@@ -381,8 +381,19 @@ public struct TextInserter: TextInserting {
         system.frontmostApplication()
     }
 
+    /// Обёртка над единственной реализацией.
+    ///
+    /// Тело ровно одно. Два тела разошлись бы, и витрина скорости показывала бы
+    /// путь, которым продукт не ходит.
     public func insert(_ text: String, into target: TargetApplication?) async throws {
-        guard !text.isEmpty else { return }
+        _ = try await insertReportingMarks(text, into: target)
+    }
+
+    public func insertReportingMarks(
+        _ text: String,
+        into target: TargetApplication?
+    ) async throws -> InsertionMarks {
+        guard !text.isEmpty else { return InsertionMarks() }
         guard let target else { throw TextInsertionError.targetUnavailable }
 
         // Защищённый ввод — не сбой, а нормальная ситуация.
@@ -401,6 +412,7 @@ public struct TextInserter: TextInserting {
         try validateProtectedState()
 
         let transaction = try pasteboard.beginHostOnlyWrite(text)
+        let pasteDispatchedAt: ContinuousClock.Instant
         do {
             try await waitForModifiersRelease()
             // Последняя проверка выполняется после изменения clipboard и прямо
@@ -408,6 +420,9 @@ public struct TextInserter: TextInserting {
             try validateTarget(target)
             try validateProtectedState()
             try system.post(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+            // Заголовочная отметка: с этого мгновения текст в чужом окне.
+            // Всё, что дальше, — защита буфера, и скоростью она не является.
+            pasteDispatchedAt = .now
         } catch {
             do {
                 try pasteboard.restore(transaction)
@@ -418,7 +433,10 @@ public struct TextInserter: TextInserting {
         }
 
         // Большинство приложений читает pasteboard внутри события, но не все.
-        // 100 мс оставляет им время и держит snapshot далеко внутри лимита 2 с.
+        // Задержка — `pasteConsumptionDelay`, то есть секунда: комментарий тут
+        // много версий подряд говорил «100 мс» и противоречил своей же
+        // константе. Это ожидание, а не работа, и метрикой скорости оно быть
+        // не может — отметка вставки снята выше, до сна.
         do {
             try await Task.sleep(for: Self.pasteConsumptionDelay)
         } catch {
@@ -436,6 +454,10 @@ public struct TextInserter: TextInserting {
         } catch {
             throw TextInsertionError.insertedButClipboardRestoreFailed
         }
+        return InsertionMarks(
+            pasteDispatchedAt: pasteDispatchedAt,
+            clipboardRestoredAt: .now
+        )
     }
 
     public func pressReturn() async throws {

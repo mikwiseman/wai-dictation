@@ -36,6 +36,9 @@ public protocol AudioCapturing: Sendable {
 
     /// Прервать запись и удалить файл — пользователь отменил диктовку.
     func abortRecording() async
+
+    /// Сколько микрофон поднимался до первого кадра. `nil` — не измерялось.
+    func startupLatency() async -> Duration?
 }
 
 extension AudioCapturing {
@@ -43,6 +46,10 @@ extension AudioCapturing {
     /// Реализация по умолчанию нужна и для этого, и чтобы добавление ожидания
     /// не потребовало трогать каждую реализацию сразу.
     public func waitForFirstFrame() async -> Bool { true }
+
+    /// `nil`, а не ноль: край, который не умеет измерить разогрев, не имеет
+    /// права выглядеть мгновенным.
+    public func startupLatency() async -> Duration? { nil }
 }
 
 public enum AudioCaptureError: Error, Sendable, Equatable {
@@ -69,6 +76,28 @@ public protocol TextInserting: Sendable {
     /// Снимается в начале сессии, а не в конце: пока идёт распознавание, фокус
     /// мог уйти, а текст должен попасть туда, где его диктовали.
     func frontmostApplication() -> TargetApplication?
+
+    /// Вставить и рассказать, когда именно текст ушёл в чужое окно.
+    ///
+    /// Отдельный метод нужен потому, что `insert` возвращается только через
+    /// секунду защиты буфера: снаружи момент вставки не поймать, изнутри —
+    /// тривиально.
+    func insertReportingMarks(
+        _ text: String,
+        into target: TargetApplication?
+    ) async throws -> InsertionMarks
+}
+
+extension TextInserting {
+    /// По умолчанию — обычная вставка без отметок. Подставные вставщики в
+    /// тестах ничего не измеряют и притворяться измеряющими не должны.
+    public func insertReportingMarks(
+        _ text: String,
+        into target: TargetApplication?
+    ) async throws -> InsertionMarks {
+        try await insert(text, into: target)
+        return InsertionMarks()
+    }
 }
 
 /// Приложение-получатель.

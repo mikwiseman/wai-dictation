@@ -43,6 +43,9 @@ public final class DictationController {
     /// набора тестов, которые про происхождение ничего не знают, и менять его
     /// подпись пришлось бы во всех. Аддитивный опциональный колбэк их не видит.
     public var onDictationCompleted: (@MainActor (PipelineProvenance) -> Void)?
+    /// Сколько заняло «отпустил → текст на месте». Только для успешных вставок:
+    /// у неудачной честного числа нет.
+    public var onSpeed: (@MainActor (DictationSpeedReport) -> Void)?
     /// Сообщает, идёт ли запись без удержания: от этого зависит, как
     /// истолковать следующее нажатие клавиши.
     public var onHandsFreeChange: (@MainActor (Bool) -> Void)?
@@ -67,6 +70,14 @@ public final class DictationController {
     /// Часы сессии. Отдельной зависимостью ровно по той же причине, что и
     /// микрофон: часовой предел иначе нельзя проверить, не прождав час.
     private let now: @Sendable () -> Date
+    /// Монотонные часы — отдельно от настенных, и это не дублирование.
+    ///
+    /// `now` отвечает за часовой предел, а это идея настенного времени.
+    /// Скорости настенные часы не годятся вовсе: сон, переход на летнее время
+    /// или подводка по NTF посреди диктовки дали бы «−400 мс», то есть просто
+    /// враньё. `MicrophoneCapture` и `TextInserter` уже живут на
+    /// `ContinuousClock`, поэтому все отметки сравнимы между собой.
+    private let monotonicNow: @Sendable () -> ContinuousClock.Instant
 
     // MARK: - Состояние сессии
 
@@ -86,6 +97,8 @@ public final class DictationController {
     private var isHandsFree = false
     private var finalizationTask: Task<Void, Never>?
     private var recordingStartedAt: Date?
+    /// Момент отпускания клавиши — начало отсчёта «stop → текст».
+    private var stopRequestedAt: ContinuousClock.Instant?
 
     /// Номер текущей сессии — растёт на каждом старте.
     ///
@@ -112,7 +125,8 @@ public final class DictationController {
         sounds: any Sounding,
         recordingRecovery: any RecordingRecoveryStoring = DiscardingRecordingRecovery(),
         pipeline: @escaping () -> TextPipeline = { TextPipeline() },
-        now: @escaping @Sendable () -> Date = { Date() }
+        now: @escaping @Sendable () -> Date = { Date() },
+        monotonicNow: @escaping @Sendable () -> ContinuousClock.Instant = { .now }
     ) {
         self.capture = capture
         self.transcribe = transcribe
@@ -122,6 +136,7 @@ public final class DictationController {
         self.recordingRecovery = recordingRecovery
         self.pipeline = pipeline
         self.now = now
+        self.monotonicNow = monotonicNow
     }
 
     // MARK: - Начало
@@ -257,6 +272,9 @@ public final class DictationController {
         // Финализация запускается ровно один раз: иначе текст вставится дважды.
         guard finalizationTask == nil, state == .listening else { return }
 
+        // Один вход на все четыре пути остановки: stop, stopHandsFree,
+        // отложенное отпускание и часовой предел — все приходят сюда.
+        stopRequestedAt = monotonicNow()
         let session = currentSession
         state = .transcribing
         let task = Task { [weak self] in
@@ -351,6 +369,11 @@ public final class DictationController {
             return
         }
 
+        // t1: движок вернул текст. Снимается до всех проверок ниже, чтобы в
+        // число не попало наше собственное ветвление.
+        let recognizedAt = monotonicNow()
+        let microphoneStartup = await capture.startupLatency()
+
         let run = pipeline().run(recognized.text)
         let processed = run.output
         guard !processed.text.isEmpty else {
@@ -370,13 +393,41 @@ public final class DictationController {
             return
         }
 
-        await insert(processed, provenance: run.provenance, session: session)
+        await insert(
+            processed,
+            provenance: run.provenance,
+            recognizedAt: recognizedAt,
+            microphoneStartup: microphoneStartup,
+            session: session
+        )
         await discard(recording.url)
+    }
+
+    /// Собрать отчёт о скорости и отдать его наружу.
+    ///
+    /// Без отметки отпускания отчёта нет вовсе: посчитать «stop → текст» не от
+    /// чего, а показать число, посчитанное от чего-то другого, — соврать.
+    private func reportSpeed(
+        recognizedAt: ContinuousClock.Instant,
+        marks: InsertionMarks,
+        microphoneStartup: Duration?
+    ) {
+        guard let onSpeed, let stopRequestedAt else { return }
+        onSpeed(
+            DictationSpeedReport(
+                toRecognizedText: stopRequestedAt.duration(to: recognizedAt),
+                toPasteDispatched: marks.pasteDispatchedAt.map { stopRequestedAt.duration(to: $0) },
+                toClipboardRestored: marks.clipboardRestoredAt.map { stopRequestedAt.duration(to: $0) },
+                microphoneStartup: microphoneStartup
+            )
+        )
     }
 
     private func insert(
         _ output: TextPipeline.Output,
         provenance: PipelineProvenance,
+        recognizedAt: ContinuousClock.Instant,
+        microphoneStartup: Duration?,
         session: Int
     ) async {
         state = .inserting
@@ -389,8 +440,9 @@ public final class DictationController {
             return
         }
 
+        let marks: InsertionMarks
         do {
-            try await inserter.insert(output.text, into: targetApplication)
+            marks = try await inserter.insertReportingMarks(output.text, into: targetApplication)
         } catch {
             await handleInsertionFailure(error, text: output.text, session: session)
             return
@@ -399,6 +451,7 @@ public final class DictationController {
         // Происхождение — только после успешной вставки: у неудачной нет
         // «того, что человек увидел», и «скопировать дословно» ей нечего дать.
         onDictationCompleted?(provenance)
+        reportSpeed(recognizedAt: recognizedAt, marks: marks, microphoneStartup: microphoneStartup)
 
         // Нажатие разбирается отдельно от вставки намеренно. Это разные
         // системные вызовы, и второй отказывает при живом первом — например,
@@ -603,6 +656,10 @@ public final class DictationController {
         isHandsFreeActive = false
         targetApplication = nil
         recordingStartedAt = nil
+        // Отметка отпускания обнуляется вместе с остальным состоянием сессии.
+        // Иначе t0 отменённой диктовки протёк бы в следующую, и та отчиталась
+        // бы о времени, включающем чужое ожидание.
+        stopRequestedAt = nil
         state = .idle
 
         // Отложенное сообщение показываем здесь — когда панель уже свободна.
