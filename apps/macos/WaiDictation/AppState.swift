@@ -160,6 +160,13 @@ public final class AppState: ObservableObject {
     /// правки учит словарь; на диск текст не попадает никогда.
     public struct LastDictation: Equatable {
         public let insertedText: String
+        /// Чем текст был до словаря и косметики.
+        ///
+        /// Живёт только в памяти процесса и перезаписывается каждой диктовкой:
+        /// один слот, не история. Отсюда берётся «скопировать дословно» и отсюда
+        /// же обучение на правках узнаёт защищённые спаны — другого честного
+        /// источника у него нет, оно видит лишь вставленный текст.
+        public let provenance: PipelineProvenance
     }
     @Published public private(set) var lastDictation: LastDictation?
 
@@ -482,7 +489,7 @@ public final class AppState: ObservableObject {
                 sounds: sounds,
                 recordingRecovery: recordingRecovery,
                 pipeline: { [weak self] in
-                    TextPipeline(replacements: self?.replacements ?? [])
+                    self?.makePipeline() ?? TextPipeline()
                 }
             )
             controller.onStateChange = { [weak self] state in
@@ -508,11 +515,16 @@ public final class AppState: ObservableObject {
             controller.onTextInserted = { [weak self] text in
                 guard let self else { return }
                 self.successfulDictationCount += 1
-                self.lastDictation = LastDictation(insertedText: text)
                 guard self.learnFromEdits else { return }
                 self.editWatcher.beginWatching(inserted: text) { [weak self] original, edited in
                     self?.learn(original: original, edited: edited)
                 }
+            }
+            controller.onDictationCompleted = { [weak self] provenance in
+                self?.lastDictation = LastDictation(
+                    insertedText: provenance.finalText,
+                    provenance: provenance
+                )
             }
             self.controller = controller
         } catch {
@@ -673,6 +685,7 @@ public final class AppState: ObservableObject {
             }
             await overlay.present(.transcribing, elapsed: 0)
             let recognizedText: String
+            let provenance: PipelineProvenance
             do {
                 let result = try await transcribe(
                     engineDirectory,
@@ -680,9 +693,15 @@ public final class AppState: ObservableObject {
                         box.value.string(forKey: Self.recognitionLanguageKey)
                     }
                 )(url)
-                let output = TextPipeline(replacements: replacements).process(result.text)
-                guard !output.text.isEmpty else { throw ASREngineError.inferenceFailed("empty result") }
-                recognizedText = output.text
+                // Тот же конвейер, что и на живом пути, и та же запись
+                // происхождения. Без неё повтор после сбоя оставлял бы
+                // `lastDictation` от ПРЕДЫДУЩЕЙ диктовки — и обучение на
+                // правках выучило бы пару из чужого текста, то есть тихо
+                // испортило бы личный словарь человека.
+                let run = makePipeline().run(result.text)
+                guard !run.output.text.isEmpty else { throw ASREngineError.inferenceFailed("empty result") }
+                recognizedText = run.output.text
+                provenance = run.provenance
             } catch {
                 notify(
                     DictationNotice(
@@ -698,6 +717,12 @@ public final class AppState: ObservableObject {
             await overlay.present(.inserting, elapsed: 0)
             do {
                 try await inserter.insert(recognizedText, into: target)
+                // Ровно как на живом пути: происхождение записывается только
+                // после успешной вставки.
+                lastDictation = LastDictation(
+                    insertedText: recognizedText,
+                    provenance: provenance
+                )
             } catch {
                 recoveredText = recognizedText
                 do {
@@ -1461,6 +1486,17 @@ public final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Конвейер
+
+    /// Один конвейер на оба пути: живую диктовку и повтор после сбоя.
+    ///
+    /// Пути было два, и они уже расходились — повтор терял `output.command`.
+    /// Общая сборка делает «оба пути одинаковы» свойством кода, а не тем, что
+    /// надо помнить, правя одно из двух мест.
+    private func makePipeline() -> TextPipeline {
+        TextPipeline(replacements: replacements)
+    }
+
     // MARK: - Словарь
 
     /// Можно ли сейчас менять словарь.
@@ -1477,7 +1513,10 @@ public final class AppState: ObservableObject {
         let proposals = CorrectionLearning.propose(
             original: original,
             edited: edited,
-            existing: replacements
+            existing: replacements,
+            // Спаны последней диктовки: правка внутри пути или бэктиков — это
+            // правка кода, и молчаливым правилом будущих диктовок она не станет.
+            protecting: lastDictation?.provenance.spans ?? []
         )
         for proposal in proposals {
             addReplacement(spoken: proposal.spoken, written: proposal.written)
@@ -1500,7 +1539,8 @@ public final class AppState: ObservableObject {
         let proposals = CorrectionLearning.propose(
             original: lastDictation.insertedText,
             edited: editedText,
-            existing: replacements
+            existing: replacements,
+            protecting: lastDictation.provenance.spans
         )
         for proposal in proposals {
             addReplacement(spoken: proposal.spoken, written: proposal.written)

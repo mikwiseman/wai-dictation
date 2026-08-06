@@ -123,11 +123,43 @@ enum PhoneticMatching {
     }
 
     static func apply(_ replacements: [DictionaryReplacement], to text: String) -> String {
+        apply(replacements, to: text, protecting: [])
+    }
+
+    /// Фонетический добор, обходящий защищённые спаны.
+    ///
+    /// Две отдельные защиты, и обе нужны. Первая — слово внутри спана вообще не
+    /// попадает в список кандидатов. Вторая — окно из трёх слов не имеет права
+    /// перешагнуть спан: иначе «сентри» слева и «сентри» справа от пути
+    /// склеились бы в один термин через защищённый кусок.
+    ///
+    /// Пустое множество спанов проходит ровно тот же код, что и раньше: фильтр
+    /// становится тождественным, разрывов нет, ограничение окна не меняется.
+    static func apply(
+        _ replacements: [DictionaryReplacement],
+        to text: String,
+        protecting spans: [ProtectedSpan]
+    ) -> String {
         let index = makeIndex(replacements)
         guard !index.exact.isEmpty, !text.isEmpty else { return text }
 
-        let words = wordRanges(in: text)
+        let protectedRanges = indexRanges(of: spans, in: text)
+        let words = wordRanges(in: text).filter { word in
+            !protectedRanges.contains { $0.overlaps(word) }
+        }
         guard !words.isEmpty else { return text }
+
+        // Перед каким словом окно обязано оборваться: между ним и предыдущим
+        // лежит защищённый кусок.
+        var breaksBefore = Set<Int>()
+        if !protectedRanges.isEmpty {
+            for position in 1..<words.count {
+                let gap = words[position - 1].upperBound..<words[position].lowerBound
+                if protectedRanges.contains(where: { $0.overlaps(gap) }) {
+                    breaksBefore.insert(position)
+                }
+            }
+        }
 
         var result = ""
         var cursor = text.startIndex
@@ -136,6 +168,11 @@ enum PhoneticMatching {
         while start < words.count {
             var matched = false
             var size = min(maximumWindow, words.count - start)
+            // Укоротить окно до ближайшего разрыва.
+            for offset in 1..<max(size, 1) where breaksBefore.contains(start + offset) {
+                size = offset
+                break
+            }
 
             while size >= 1 {
                 let window = Array(words[start..<(start + size)])
@@ -155,6 +192,21 @@ enum PhoneticMatching {
 
         result.append(contentsOf: text[cursor...])
         return result
+    }
+
+    /// Символьные офсеты спанов → диапазоны строки, к которой они посчитаны.
+    private static func indexRanges(
+        of spans: [ProtectedSpan],
+        in text: String
+    ) -> [Range<String.Index>] {
+        guard !spans.isEmpty else { return [] }
+        let count = text.count
+        return spans.compactMap { span in
+            guard span.range.lowerBound >= 0, span.range.upperBound <= count else { return nil }
+            let lower = text.index(text.startIndex, offsetBy: span.range.lowerBound)
+            let upper = text.index(text.startIndex, offsetBy: span.range.upperBound)
+            return lower..<upper
+        }
     }
 
     // MARK: - Что искать

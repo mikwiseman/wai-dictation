@@ -37,6 +37,12 @@ public final class DictationController {
     /// Успешная вставка — с текстом, который реально ушёл в приложение.
     /// Текст нужен окну «поправь последнюю диктовку»; на диск он не попадает.
     public var onTextInserted: (@MainActor (String) -> Void)?
+    /// Происхождение только что вставленной диктовки: чем текст был и чем стал.
+    ///
+    /// Отдельный колбэк, а не расширение `onTextInserted`: тот дёргают четыре
+    /// набора тестов, которые про происхождение ничего не знают, и менять его
+    /// подпись пришлось бы во всех. Аддитивный опциональный колбэк их не видит.
+    public var onDictationCompleted: (@MainActor (PipelineProvenance) -> Void)?
     /// Сообщает, идёт ли запись без удержания: от этого зависит, как
     /// истолковать следующее нажатие клавиши.
     public var onHandsFreeChange: (@MainActor (Bool) -> Void)?
@@ -345,7 +351,8 @@ public final class DictationController {
             return
         }
 
-        let processed = pipeline().process(recognized.text)
+        let run = pipeline().run(recognized.text)
+        let processed = run.output
         guard !processed.text.isEmpty else {
             // Пустой результат — не ошибка: человек мог промолчать, говорить
             // слишком тихо или в не тот микрофон. Но и молчать в ответ нельзя:
@@ -363,11 +370,15 @@ public final class DictationController {
             return
         }
 
-        await insert(processed, session: session)
+        await insert(processed, provenance: run.provenance, session: session)
         await discard(recording.url)
     }
 
-    private func insert(_ output: TextPipeline.Output, session: Int) async {
+    private func insert(
+        _ output: TextPipeline.Output,
+        provenance: PipelineProvenance,
+        session: Int
+    ) async {
         state = .inserting
         await overlay.present(.inserting, elapsed: elapsedSeconds())
 
@@ -385,6 +396,9 @@ public final class DictationController {
             return
         }
         onTextInserted?(output.text)
+        // Происхождение — только после успешной вставки: у неудачной нет
+        // «того, что человек увидел», и «скопировать дословно» ей нечего дать.
+        onDictationCompleted?(provenance)
 
         // Нажатие разбирается отдельно от вставки намеренно. Это разные
         // системные вызовы, и второй отказывает при живом первом — например,

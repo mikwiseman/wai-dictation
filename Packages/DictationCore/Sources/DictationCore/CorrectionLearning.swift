@@ -25,16 +25,25 @@ public enum CorrectionLearning {
     static let maximumProposalsPerCorrection = 5
 
     /// Предложить замены по правке. Ничего не сохраняет — только предлагает.
+    ///
+    /// `protecting` — защищённые спаны исходного текста. Из них предложения не
+    /// строятся никогда: путь, флаг или содержимое бэктиков человек правит как
+    /// код, а не как термин, и превращать такую правку в молчаливое правило
+    /// будущих диктовок нельзя. Пустой список — прежнее поведение.
     public static func propose(
         original: String,
         edited: String,
-        existing: [DictionaryReplacement] = []
+        existing: [DictionaryReplacement] = [],
+        protecting spans: [ProtectedSpan] = []
     ) -> [DictionaryReplacement] {
         let originalWords = words(from: original)
         let editedWords = words(from: edited)
         guard !originalWords.isEmpty, !editedWords.isEmpty else { return [] }
 
         let known = Set(existing.map { $0.spoken.lowercased() })
+        let protectedWords = Set(
+            spans.flatMap { words(from: $0.text) }.map { $0.lowercased() }
+        )
         var seen = Set<String>()
         var proposals: [DictionaryReplacement] = []
 
@@ -46,6 +55,11 @@ public enum CorrectionLearning {
             }
             guard looksLikeTerm(spoken: spoken, written: written) else { continue }
             guard !known.contains(spoken.lowercased()) else { continue }
+            // Хоть одно слово из защищённого куска — предложение отбрасывается
+            // целиком: правка внутри кода не делает термин.
+            guard !pair.original.contains(where: { protectedWords.contains($0.lowercased()) }) else {
+                continue
+            }
             // Одна и та же пара может встретиться в тексте дважды («открой
             // сентри и закрой сентри»). Второй экземпляр в словаре ничего не
             // добавляет, а удалять его человеку пришлось бы отдельной строкой.

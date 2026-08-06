@@ -50,10 +50,29 @@ public enum DictionaryReplacements {
     /// фонетический добор: он ловит те написания термина, которых в словаре
     /// нет и быть не может, потому что модель пишет одно и то же слово
     /// по-разному в разных фразах. Замер обоих проходов — в docs/benchmarks.md.
+    /// Проходы расщеплены (`applyExact` + `applyPhonetic`), потому что между
+    /// ними встаёт детекция защищённых спанов: точная замена — явная воля
+    /// человека и идёт до того, как спаны вообще существуют, а фонетический
+    /// добор — догадка и обязан спаны обходить. Порядок и есть правило
+    /// приоритета; отдельных правил прецеденса писать не нужно.
     public static func apply(
         _ replacements: [DictionaryReplacement],
         to text: String,
         phoneticMatching: Bool = true
+    ) -> String {
+        let exact = applyExact(replacements, to: text)
+        guard phoneticMatching else { return exact }
+        return applyPhonetic(replacements, to: exact, protecting: [])
+    }
+
+    /// Первый проход: точное совпадение с падежами.
+    ///
+    /// Дословный подъём прежнего тела — накопитель мутирующий и общий, поэтому
+    /// замены могут наслаиваться (позднее правило переписывает то, что породило
+    /// раннее). Это поведение зафиксировано тестами и менять его нельзя.
+    static func applyExact(
+        _ replacements: [DictionaryReplacement],
+        to text: String
     ) -> String {
         guard !replacements.isEmpty, !text.isEmpty else { return text }
 
@@ -69,8 +88,22 @@ public enum DictionaryReplacements {
                 in: result
             )
         }
-        guard phoneticMatching else { return result }
-        return PhoneticMatching.apply(replacements, to: result)
+        return result
+    }
+
+    /// Второй проход: фонетический добор вне защищённых спанов.
+    ///
+    /// Пустое множество спанов уходит буквально на прежний путь, а не «на новый
+    /// путь с пустым фильтром». Матчер жадный, его поведение эмерджентное, и
+    /// идентичность должна держаться на построении, а не на рассуждении.
+    static func applyPhonetic(
+        _ replacements: [DictionaryReplacement],
+        to text: String,
+        protecting spans: [ProtectedSpan]
+    ) -> String {
+        guard !replacements.isEmpty, !text.isEmpty else { return text }
+        guard !spans.isEmpty else { return PhoneticMatching.apply(replacements, to: text) }
+        return PhoneticMatching.apply(replacements, to: text, protecting: spans)
     }
 
     static func replaceWholeWords(
