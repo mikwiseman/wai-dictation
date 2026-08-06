@@ -88,6 +88,12 @@ private struct GeneralSettings: View {
                 Text("The dictation panel shows the text as it is recognized. Turn this off if you'd rather not see it on screen.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("Show how long it took", isOn: $state.showSpeedReadout)
+                    .accessibilityHint("Shows the time from releasing the key to the text appearing")
+                Text("After each dictation the panel briefly shows the time from releasing the key to the text landing in your app. Measured, not estimated.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

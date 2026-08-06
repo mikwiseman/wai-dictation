@@ -266,3 +266,71 @@ final class OverlayModelTests: XCTestCase {
         XCTAssertFalse(model.showsSilenceHint)
     }
 }
+
+/// Строка скорости в панели: живёт сама, уступает сообщению, не переживает
+/// новую диктовку.
+@MainActor
+final class OverlaySpeedTests: XCTestCase {
+    private func makeModel() -> OverlayModel {
+        OverlayModel(
+            announcer: FakeAnnouncer(),
+            noticeDuration: .milliseconds(40),
+            speedDuration: .milliseconds(40)
+        )
+    }
+
+    private let readout = SpeedReadout(
+        line: "stop → text: 153 ms",
+        accessibilityLabel: "Text ready 153 milliseconds after you released the key"
+    )
+
+    /// Панель гасится уборкой сессии через несколько строк после отчёта —
+    /// без этой связки число мигнуло бы и пропало.
+    func testСтрокаСкоростиДержитПанельНаЭкранеИСамаУходит() async throws {
+        let model = makeModel()
+        model.showSpeed(readout)
+        model.hide()
+
+        XCTAssertTrue(model.isVisible, "уборка не имеет права стереть число сразу")
+        XCTAssertEqual(model.speedLine, "stop → text: 153 ms")
+
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertNil(model.speedLine)
+        XCTAssertFalse(model.isVisible)
+    }
+
+    /// Сообщение об ошибке важнее витрины.
+    func testСообщениеВытесняетСтрокуСкорости() {
+        let model = makeModel()
+        model.showSpeed(readout)
+        model.showNotice(DictationNotice(kind: .failure, message: "Не вставилось"))
+
+        XCTAssertNil(model.speedLine)
+        XCTAssertNotNil(model.notice)
+    }
+
+    func testНоваяДиктовкаСтираетПрошлуюСтрокуСкорости() {
+        let model = makeModel()
+        model.showSpeed(readout)
+        model.show(.listening, elapsed: 0)
+
+        XCTAssertNil(model.speedLine, "число прошлой диктовки к новой отношения не имеет")
+    }
+
+    /// Число попадает в ярлык, но вслух не произносится: читать его после
+    /// каждой диктовки было бы навязчиво, а найти курсором — нет.
+    func testСкоростьНеОбъявляетсяВслухНоПопадаетВЯрлык() {
+        let announcer = FakeAnnouncer()
+        let model = OverlayModel(
+            announcer: announcer,
+            noticeDuration: .milliseconds(40),
+            speedDuration: .milliseconds(40)
+        )
+        let before = announcer.messages.count
+
+        model.showSpeed(readout)
+
+        XCTAssertEqual(announcer.messages.count, before, "вслух — молчим")
+        XCTAssertTrue(model.accessibilityLabel.contains("153 milliseconds"))
+    }
+}

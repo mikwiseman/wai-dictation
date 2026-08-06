@@ -23,9 +23,14 @@ public final class DictationOverlay: OverlayPresenting {
 
     public init(
         announcer: any AccessibilityAnnouncing = SystemAccessibilityAnnouncer(),
-        noticeDuration: Duration = .seconds(4)
+        noticeDuration: Duration = .seconds(4),
+        speedDuration: Duration = .seconds(2)
     ) {
-        model = OverlayModel(announcer: announcer, noticeDuration: noticeDuration)
+        model = OverlayModel(
+            announcer: announcer,
+            noticeDuration: noticeDuration,
+            speedDuration: speedDuration
+        )
         model.onVisibilityChange = { [weak self] visible in
             if visible {
                 self?.showPanel()
@@ -134,6 +139,13 @@ protocol PreviewPresenting: AnyObject {
     func showSilenceHint()
 }
 
+/// Край витрины скорости — по образцу `PreviewPresenting` и по той же причине:
+/// это украшение поверх диктовки, а не часть контракта ядра.
+@MainActor
+protocol SpeedPresenting: AnyObject {
+    func showSpeed(_ readout: SpeedReadout)
+}
+
 @MainActor
 final class OverlayModel: ObservableObject {
     @Published private(set) var state: DictationState = .idle
@@ -148,6 +160,9 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var inputLevel: Float = 0
     /// Слушаем дольше двух секунд, а сигнала нет: скорее всего, не тот микрофон.
     @Published private(set) var showsSilenceHint = false
+    /// Строка «stop → text: N ms» после успешной вставки. Живёт пару секунд.
+    @Published private(set) var speedLine: String?
+    private var speedHide: Task<Void, Never>?
 
     var hasPreview: Bool { !previewConfirmed.isEmpty || !previewVolatile.isEmpty }
 
@@ -164,6 +179,7 @@ final class OverlayModel: ObservableObject {
 
     private let announcer: any AccessibilityAnnouncing
     private let noticeDuration: Duration
+    private let speedDuration: Duration
     /// Помечен `nonisolated(unsafe)`, потому что таймер снимает `deinit`, а он у
     /// изолированного класса — вне изоляции. Трогают его только с главного
     /// потока: панель целиком живёт на нём.
@@ -176,10 +192,12 @@ final class OverlayModel: ObservableObject {
 
     init(
         announcer: any AccessibilityAnnouncing = SystemAccessibilityAnnouncer(),
-        noticeDuration: Duration = .seconds(4)
+        noticeDuration: Duration = .seconds(4),
+        speedDuration: Duration = .seconds(2)
     ) {
         self.announcer = announcer
         self.noticeDuration = noticeDuration
+        self.speedDuration = speedDuration
     }
 
     deinit {
@@ -200,6 +218,8 @@ final class OverlayModel: ObservableObject {
             previewVolatile = ""
             inputLevel = 0
             showsSilenceHint = false
+            // И прошлое число тоже: оно про прошлую диктовку.
+            clearSpeed()
         }
         setElapsed(elapsed, ticking: state == .listening)
         setVisible(true)
@@ -215,10 +235,20 @@ final class OverlayModel: ObservableObject {
     }
 
     /// Ярлык панели для VoiceOver — вместе с подсказкой о тишине, если она есть.
+    /// Ярлык панели для VoiceOver.
+    ///
+    /// Скорость попадает сюда — но не в объявления. Число, произнесённое вслух
+    /// после каждой диктовки, было бы навязчивым; найти его курсором VoiceOver,
+    /// если оно вдруг понадобилось, — нет.
     var accessibilityLabel: String {
-        let base = content.accessibilityLabel
-        return showsSilenceHint ? "\(Self.silenceHint) \(base)" : base
+        var base = content.accessibilityLabel
+        if showsSilenceHint { base = "\(Self.silenceHint) \(base)" }
+        if let speedAccessibilityLabel { base = "\(base) \(speedAccessibilityLabel)" }
+        return base
     }
+
+    /// Словесная форма строки скорости: «ms» синтезатор читает как «эмэс».
+    private(set) var speedAccessibilityLabel: String?
 
     func updateInputLevel(_ level: Float) {
         inputLevel = min(1, max(0, level))
@@ -243,6 +273,8 @@ final class OverlayModel: ObservableObject {
     /// Показать сообщение и убрать его через положенное время.
     func showNotice(_ notice: DictationNotice) {
         cancelAutoHide()
+        // Сообщение об ошибке важнее витрины: число уступает ему место.
+        clearSpeed()
         setElapsed(elapsed, ticking: false)
         self.notice = notice
         setVisible(true)
@@ -261,13 +293,41 @@ final class OverlayModel: ObservableObject {
         }
     }
 
+    /// Показать, сколько заняло «отпустил → текст на месте».
+    ///
+    /// Держит панель на экране сама: `cleanup` вызывает `dismiss` через
+    /// несколько строк после отчёта, и без этого число мигнуло бы и исчезло.
+    func showSpeed(_ readout: SpeedReadout) {
+        speedHide?.cancel()
+        speedLine = readout.line
+        speedAccessibilityLabel = readout.accessibilityLabel
+        setVisible(true)
+        let duration = speedDuration
+        speedHide = Task { [weak self] in
+            try? await Task.sleep(for: duration)
+            // Проверка отмены обязательна: `try?` глотает её вместе с ошибкой,
+            // и отменённая задача иначе унесла бы уже следующее число.
+            guard let self, !Task.isCancelled else { return }
+            self.speedLine = nil
+            self.setVisible(false)
+        }
+    }
+
+    private func clearSpeed() {
+        speedHide?.cancel()
+        speedHide = nil
+        speedLine = nil
+        speedAccessibilityLabel = nil
+    }
+
     /// Убрать панель.
     ///
     /// Сообщение остаётся на экране: человек должен успеть его прочесть, а
-    /// уборка после сессии приходит сразу за ним.
+    /// уборка после сессии приходит сразу за ним. То же и со строкой скорости:
+    /// её показ приходит из той же уборки, что и просьба погасить панель.
     func hide() {
         setElapsed(elapsed, ticking: false)
-        guard notice == nil else { return }
+        guard notice == nil, speedLine == nil else { return }
         cancelAutoHide()
         setVisible(false)
         // Следующая диктовка обязана объявиться заново, даже если состояние
@@ -364,12 +424,20 @@ private struct OverlayView: View {
                         // пустота читалась бы как «мои слова пропали».
                         .opacity(model.state == .transcribing ? 0.5 : 1)
                 }
+                if let speedLine = model.speedLine {
+                    // Ни `.transition`, ни `.animation`: строка просто
+                    // появляется и просто исчезает. Это и есть совместимость с
+                    // reduceMotion — гасить нечего.
+                    Text(speedLine)
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .frame(width: model.hasPreview ? 360 : 280, alignment: .leading)
+        .frame(width: model.hasPreview || model.speedLine != nil ? 360 : 280, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         // Панель читается одним элементом: цветная точка и счётчик по
         // отдельности не значат ничего.
@@ -401,5 +469,11 @@ extension DictationOverlay: PreviewPresenting {
 
     func showSilenceHint() {
         model.showSilenceHint()
+    }
+}
+
+extension DictationOverlay: SpeedPresenting {
+    func showSpeed(_ readout: SpeedReadout) {
+        model.showSpeed(readout)
     }
 }

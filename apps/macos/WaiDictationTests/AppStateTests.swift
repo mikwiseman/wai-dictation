@@ -604,6 +604,15 @@ final class AppStateTests: XCTestCase {
         ), 0)
     }
 
+    func testПоказСкоростиСохраняетсяИПереживаетПерезапуск() {
+        let state = makeState()
+        XCTAssertTrue(state.showSpeedReadout, "витрина включена по умолчанию — цифра и есть аргумент")
+
+        state.showSpeedReadout = false
+        XCTAssertFalse(harness.defaults.bool(forKey: AppState.showSpeedReadoutKey))
+        XCTAssertFalse(makeState().showSpeedReadout)
+    }
+
     func testОбучениеНаПравкахПоУмолчаниюВыключено() {
         let state = makeState()
 

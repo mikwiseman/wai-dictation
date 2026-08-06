@@ -269,6 +269,21 @@ public final class AppState: ObservableObject {
     nonisolated static let learnFromEditsKey = "learnFromEdits"
 
 
+    /// Показывать ли «stop → text: N ms» после вставки.
+    ///
+    /// Витрина: число — главный аргумент продукта, и на экране оно быть должно.
+    /// Но это всё-таки украшение поверх чужого окна, поэтому выключатель есть.
+    @Published public var showSpeedReadout: Bool {
+        didSet {
+            guard oldValue != showSpeedReadout else { return }
+            defaults.set(showSpeedReadout, forKey: Self.showSpeedReadoutKey)
+        }
+    }
+    nonisolated static let showSpeedReadoutKey = "showSpeedReadout"
+
+    /// Последний замер скорости. Только в памяти, только числа.
+    @Published public private(set) var lastSpeed: DictationSpeedReport?
+
     /// Живой предпросмотр распознавания в панели. Украшение — выключается.
     @Published public var showLivePreview: Bool {
         didSet {
@@ -364,6 +379,9 @@ public final class AppState: ObservableObject {
         // Отсутствие ключа = выключено: `bool(forKey:)` даёт false. Это
         // сознательно отличается от `showLivePreview` выше — тот украшение и
         // включён по умолчанию, а этот читает чужое окно.
+        showSpeedReadout = environment.defaults.object(forKey: Self.showSpeedReadoutKey) == nil
+            ? true
+            : environment.defaults.bool(forKey: Self.showSpeedReadoutKey)
         learnFromEdits = environment.defaults.bool(forKey: Self.learnFromEditsKey)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         paths = environment.paths
@@ -519,6 +537,12 @@ public final class AppState: ObservableObject {
                 self.editWatcher.beginWatching(inserted: text) { [weak self] original, edited in
                     self?.learn(original: original, edited: edited)
                 }
+            }
+            controller.onSpeed = { [weak self] report in
+                guard let self else { return }
+                self.lastSpeed = report
+                guard self.showSpeedReadout, let readout = SpeedReadout.make(report) else { return }
+                (self.overlay as? SpeedPresenting)?.showSpeed(readout)
             }
             controller.onDictationCompleted = { [weak self] provenance in
                 self?.lastDictation = LastDictation(
