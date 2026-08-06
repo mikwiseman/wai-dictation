@@ -42,6 +42,13 @@ struct MenuContent: View {
             }
         }
 
+        if state.canCopyRawDictation {
+            Divider()
+            // Дословный текст — не аварийный путь, а обычный: словарь и полишер
+            // иногда правят то, что человек хотел оставить как есть.
+            Button("Copy last dictation verbatim") { state.copyRawDictation() }
+        }
+
         if state.recoveredText != nil {
             Divider()
             // Заголовок над кнопками — как у блока с записью ниже. Без него три

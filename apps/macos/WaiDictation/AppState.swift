@@ -641,6 +641,35 @@ public final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Дословный текст последней диктовки
+
+    /// Есть ли что копировать дословно.
+    public var canCopyRawDictation: Bool {
+        guard let raw = lastDictation?.provenance.raw else { return false }
+        return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Положить в буфер то, что человек сказал, — до словаря и до косметики.
+    ///
+    /// Обещание «дословный текст всегда доступен» держится на записи
+    /// происхождения в памяти процесса: ни чтения чужого поля через
+    /// Accessibility, ни записи на диск для этого не нужно.
+    ///
+    /// Буфер пишется host-only с маркерами transient/concealed, как и вставка:
+    /// голый `clearContents()` отдал бы диктовку в Universal Clipboard на все
+    /// устройства Apple ID.
+    public func copyRawDictation() {
+        guard let raw = lastDictation?.provenance.raw,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return }
+        do {
+            try HostOnlyPasteboard().copyHostOnly(raw)
+            notify(DictationNotice(kind: .info, message: "Verbatim text copied to this Mac only."))
+        } catch {
+            notify(DictationNotice(kind: .failure, message: "Couldn't copy the verbatim text."))
+        }
+    }
+
     // MARK: - Copy / Retry / Delete recovery
 
     public func copyRecoveredText() {
