@@ -550,7 +550,11 @@ public actor FluidAudioAdapter: ASREngineAdapting {
             marginSeconds: 0.5,
             minSimilarity: max(helper.sizeConfig.minSimilarity, helper.context.minSimilarity)
         )
-        return output.wasModified ? output.text : nil
+        guard output.wasModified else { return nil }
+        // Ресорер подменяет слово вместе с прилипшим к нему знаком: на длинных
+        // записях из 450 знаков доезжало 347 (docs/benchmarks.md). Возвращаем
+        // потерянное, не трогая ни одного слова.
+        return PunctuationReattachment.restore(original: text, rescored: output.text)
     }
 
     public func unload() async {
