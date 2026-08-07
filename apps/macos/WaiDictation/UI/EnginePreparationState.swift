@@ -13,20 +13,20 @@ import Foundation
 /// Отказ движка сюда не входит намеренно: у него уже есть владелец —
 /// `ModelStatus.repairRequired`. Второй тип про то же самое был бы дублем,
 /// который рано или поздно разойдётся с первым.
-struct EnginePreparationState: Equatable {
-    enum Phase: Equatable {
+public struct EnginePreparationState: Equatable {
+    public enum Phase: Equatable {
         case idle
         case loadingRecognizer
         case loadingVocabulary
         case ready
     }
 
-    let phase: Phase
-    let elapsed: TimeInterval
-    let title: String
-    let detail: String?
+    public let phase: Phase
+    public let elapsed: TimeInterval
+    public let title: String
+    public let detail: String?
 
-    static func make(phase: Phase, elapsed: TimeInterval) -> EnginePreparationState {
+    public static func make(phase: Phase, elapsed: TimeInterval) -> EnginePreparationState {
         let seconds = Int(elapsed.rounded())
         switch phase {
         case .idle:

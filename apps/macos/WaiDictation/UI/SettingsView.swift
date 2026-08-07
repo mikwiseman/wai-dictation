@@ -291,6 +291,7 @@ private struct ModelSettings: View {
                     status: ModelStatus.make(
                         state: state.modelState,
                         isPreparingEngine: state.isPreparingEngine,
+                        preparation: state.enginePreparation,
                         place: .settings,
                         downloadMegabytes: state.remainingDownloadMegabytes
                     ),

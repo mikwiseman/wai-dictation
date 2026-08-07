@@ -111,6 +111,7 @@ struct MenuContent: View {
         let model = ModelStatus.make(
             state: state.modelState,
             isPreparingEngine: state.isPreparingEngine,
+            preparation: state.enginePreparation,
             place: .settings,
             downloadMegabytes: state.remainingDownloadMegabytes
         )

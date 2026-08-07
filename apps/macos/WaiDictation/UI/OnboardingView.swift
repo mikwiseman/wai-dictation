@@ -210,6 +210,7 @@ struct OnboardingView: View {
                 status: ModelStatus.make(
                     state: state.modelState,
                     isPreparingEngine: state.isPreparingEngine,
+                    preparation: state.enginePreparation,
                     place: .onboarding,
                     downloadMegabytes: state.remainingDownloadMegabytes
                 ),

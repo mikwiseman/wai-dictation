@@ -74,10 +74,17 @@ struct ModelStatus: Equatable {
     static func make(
         state: ModelState,
         isPreparingEngine: Bool,
+        preparation: EnginePreparationState? = nil,
         place: Place,
         downloadMegabytes: Int = 586
     ) -> ModelStatus {
-        var status = makeStatus(state: state, isPreparingEngine: isPreparingEngine, place: place, downloadMegabytes: downloadMegabytes)
+        var status = makeStatus(
+            state: state,
+            isPreparingEngine: isPreparingEngine,
+            preparation: preparation,
+            place: place,
+            downloadMegabytes: downloadMegabytes
+        )
         status.downloadMegabytes = downloadMegabytes
         return status
     }
@@ -85,6 +92,7 @@ struct ModelStatus: Equatable {
     private static func makeStatus(
         state: ModelState,
         isPreparingEngine: Bool,
+        preparation: EnginePreparationState?,
         place: Place,
         downloadMegabytes: Int
     ) -> ModelStatus {
@@ -130,8 +138,10 @@ struct ModelStatus: Equatable {
                 // Пока идёт первая загрузка в нейромодуль, человек видит
                 // «готова», но диктовка ещё подумает. Молчать об этом — значит
                 // получить жалобу на медленный первый раз.
+                // Живые секунды, а не «обычно 20–40»: ожидание с идущим
+                // счётчиком читается как работа, а без него — как зависание.
                 detail: isPreparingEngine
-                    ? "Preparing for this Mac — usually 20–40 seconds, and only once."
+                    ? (preparation?.title ?? "Preparing for this Mac — usually 20–40 seconds, and only once.")
                     : nil,
                 progress: nil,
                 progressLabel: nil,

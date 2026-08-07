@@ -94,3 +94,55 @@ final class EnginePreparationStateTests: XCTestCase {
         }
     }
 }
+
+/// Отсчёт подготовки движка доезжает до человека.
+@MainActor
+final class EnginePreparationWiringTests: XCTestCase {
+    private var harness: AppHarness!
+
+    override func setUp() async throws { harness = try AppHarness() }
+    override func tearDown() async throws { harness.tearDown() }
+
+    /// В покое таймер не тикает: приложение не имеет права крутить что-то
+    /// в фоне просто потому, что запущено.
+    func testВПокоеОтсчётНеИдёт() {
+        let state = harness.makeState()
+        XCTAssertFalse(state.isCountingEnginePreparation)
+        XCTAssertEqual(state.enginePreparation.phase, .idle)
+    }
+
+    /// Живые секунды доходят до строки, которую видит человек, — иначе
+    /// ожидание читается как зависание.
+    func testСекундыПодготовкиПопадаютВСтрокуСтатуса() {
+        let status = ModelStatus.make(
+            state: .ready(directory: URL(fileURLWithPath: "/tmp")),
+            isPreparingEngine: true,
+            preparation: .make(phase: .loadingRecognizer, elapsed: 9),
+            place: .settings
+        )
+        XCTAssertEqual(status.detail, "Preparing the recognizer… 9 s")
+    }
+
+    /// Вторая модель — отдельная фаза: сливать их в одну строку значит
+    /// показывать «ещё чуть-чуть», когда началась новая работа.
+    func testВтораяМодельНазываетСебяОтдельно() {
+        let status = ModelStatus.make(
+            state: .ready(directory: URL(fileURLWithPath: "/tmp")),
+            isPreparingEngine: true,
+            preparation: .make(phase: .loadingVocabulary, elapsed: 2),
+            place: .settings
+        )
+        XCTAssertEqual(status.detail, "Preparing the term booster… 2 s")
+    }
+
+    /// Подготовка кончилась — строки нет вовсе.
+    func testПослеПодготовкиСтрокаИсчезает() {
+        let status = ModelStatus.make(
+            state: .ready(directory: URL(fileURLWithPath: "/tmp")),
+            isPreparingEngine: false,
+            preparation: .make(phase: .ready, elapsed: 0),
+            place: .settings
+        )
+        XCTAssertNil(status.detail)
+    }
+}

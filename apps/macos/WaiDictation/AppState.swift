@@ -127,6 +127,18 @@ public final class AppState: ObservableObject {
     @Published public private(set) var microphoneGranted = false
     @Published public private(set) var lastNotice: DictationNotice?
     @Published public private(set) var isPreparingEngine = false
+    /// Что показывать, пока движок готовится к первой диктовке.
+    ///
+    /// Секунды считает таймер здесь, а не вью: во вью он показывал бы «0 с»
+    /// всю подготовку — состояние приходит один раз в начале и один раз в
+    /// конце, то есть ровно тогда, когда счётчик уже не нужен.
+    @Published public private(set) var enginePreparation = EnginePreparationState.make(
+        phase: .idle, elapsed: 0
+    )
+    private var preparationTimer: Timer?
+    private var preparationStartedAt: Date?
+    /// Идёт ли отсчёт подготовки. Нужен тестам: «в покое приложение молчит».
+    public var isCountingEnginePreparation: Bool { preparationTimer != nil }
     @Published public private(set) var isEngineReady = false
     /// Сколько скачает кнопка установки: полный объём или добор после обновления.
     @Published public private(set) var remainingDownloadMegabytes = 586
@@ -1372,7 +1384,11 @@ public final class AppState: ObservableObject {
         guard case .ready = await store.currentState() else { return }
         isEngineReady = false
         isPreparingEngine = true
-        defer { isPreparingEngine = false }
+        beginPreparationCountdown(phase: .loadingRecognizer)
+        defer {
+            isPreparingEngine = false
+            endPreparationCountdown()
+        }
 
         do {
             let manifest = try ModelManifest.bundled()
@@ -1382,6 +1398,10 @@ public final class AppState: ObservableObject {
             // работала бы тише заявленного, а молчаливое «хуже, но работает»
             // здесь запрещено.
             if let vocabularyDirectory {
+                // Вторая модель — вторая фаза: она компилируется отдельно, и
+                // сливать их в одну строку значит показывать человеку, что
+                // «ещё чуть-чуть», когда началась новая работа.
+                setPreparationPhase(.loadingVocabulary)
                 // Собственные замены человека — включая выученные из правок —
                 // усиливают акустику с теми же предохранителями, что и
                 // стартовый набор.
@@ -1535,6 +1555,39 @@ public final class AppState: ObservableObject {
         durationTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.controller?.checkDurationLimit() }
         }
+    }
+
+    // MARK: - Отсчёт подготовки движка
+
+    private func beginPreparationCountdown(phase: EnginePreparationState.Phase) {
+        preparationTimer?.invalidate()
+        preparationStartedAt = Date()
+        enginePreparation = .make(phase: phase, elapsed: 0)
+        preparationTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickPreparation() }
+        }
+    }
+
+    private func setPreparationPhase(_ phase: EnginePreparationState.Phase) {
+        guard preparationTimer != nil else { return }
+        enginePreparation = .make(phase: phase, elapsed: elapsedPreparation())
+    }
+
+    private func tickPreparation() {
+        guard preparationTimer != nil else { return }
+        enginePreparation = .make(phase: enginePreparation.phase, elapsed: elapsedPreparation())
+    }
+
+    private func elapsedPreparation() -> TimeInterval {
+        guard let preparationStartedAt else { return 0 }
+        return Date().timeIntervalSince(preparationStartedAt)
+    }
+
+    private func endPreparationCountdown() {
+        preparationTimer?.invalidate()
+        preparationTimer = nil
+        preparationStartedAt = nil
+        enginePreparation = .make(phase: isEngineReady ? .ready : .idle, elapsed: 0)
     }
 
     // MARK: - Конвейер
