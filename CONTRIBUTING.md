@@ -73,6 +73,17 @@ xcodebuild -project WaiDictation.xcodeproj -scheme WaiDictation \
   -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
+### Одна команда перед коммитом
+
+```bash
+./scripts/check.sh          # оба пакета + приложение + сетевой гейт, ~1 минута
+./scripts/check.sh --fast   # без Xcode, когда трогали только пакеты
+./scripts/check.sh --app    # только приложение
+```
+
+Скрипт сам чинит зависание, описанное ниже: если кэш бинарных артефактов пуст,
+он прогревает его до вызова `xcodebuild`. Отдельно об этом думать не нужно.
+
 ### Если сборка встала на «Resolve Package Graph»
 
 Симптом: `xcodebuild` (и даже `xcodebuild -list`, который ничего не компилирует)
