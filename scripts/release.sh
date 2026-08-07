@@ -17,8 +17,11 @@
 # Запуск:
 #   SPARKLE_KEY_PATH=~/.wai-dictation/sparkle-key \
 #   DEVELOPER_ID="Developer ID Application: …" \
-#   NOTARY_PROFILE="…" \
 #   ./scripts/release.sh
+#
+# Нотаризация по умолчанию читает ~/.appstoreconnect/config.json. Явные
+# NOTARY_KEY/NOTARY_KEY_ID/NOTARY_ISSUER или NOTARY_PROFILE поддерживаются,
+# но два способа авторизации нельзя смешивать.
 #
 # Пошагово — docs/release.md.
 
@@ -39,6 +42,10 @@ KEEP_ITEMS=10
 SPARKLE_KEY_PATH="${SPARKLE_KEY_PATH:-}"
 DEVELOPER_ID="${DEVELOPER_ID:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+NOTARY_KEY="${NOTARY_KEY:-}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-}"
+NOTARY_ISSUER="${NOTARY_ISSUER:-}"
+APPSTORECONNECT_CONFIG="${APPSTORECONNECT_CONFIG:-$HOME/.appstoreconnect/config.json}"
 SPARKLE_BIN="${SPARKLE_BIN:-}"
 LIVE_BENCHMARK_REPORT="${LIVE_BENCHMARK_REPORT:-quality/live-benchmark-report.json}"
 RELEASE_EVIDENCE="${RELEASE_EVIDENCE:-quality/release-evidence.json}"
@@ -49,6 +56,9 @@ fail() {
   echo "$1" >&2
   exit 1
 }
+
+# shellcheck source=lib/notary-credentials.sh
+source scripts/lib/notary-credentials.sh
 
 # --- Один SHA и подтверждённый CI -------------------------------------------
 
@@ -120,14 +130,29 @@ SIGN_UPDATE=$(find_sparkle_tool sign_update) || fail "Не нашёл sign_updat
 # Ненотаризованный образ Gatekeeper не пустит, и обновление превратится в
 # сломанное приложение у всех, кто его поставил. Пробные сборки — отдельно,
 # через scripts/build-dmg.sh.
-if [[ -z "$DEVELOPER_ID" || -z "$NOTARY_PROFILE" ]]; then
+if [[ -z "$DEVELOPER_ID" ]]; then
   fail "Релиз собирается только подписанным и нотаризованным.
 
   DEVELOPER_ID=\"Developer ID Application: Имя (TEAMID)\"
-  NOTARY_PROFILE=\"имя профиля из xcrun notarytool store-credentials\"
+
+Credentials нотаризации по умолчанию читаются из:
+  $APPSTORECONNECT_CONFIG
 
 Отдельный Debug-probe: ./scripts/build-dmg.sh"
 fi
+
+if ! load_notary_credentials; then
+  fail "Не удалось загрузить credentials нотаризации.
+
+Предпочтительный формат — $APPSTORECONNECT_CONFIG с mode 0600:
+  key_filepath  путь к .p8 в ~/.appstoreconnect/private_keys/
+  key_id        App Store Connect API Key ID
+  issuer_id     App Store Connect API Issuer ID
+
+Альтернатива: ровно один NOTARY_PROFILE из notarytool store-credentials."
+fi
+
+echo "→ Нотаризация: $NOTARY_AUTH_SOURCE"
 
 # --- Проверки перед сборкой --------------------------------------------------
 
@@ -201,7 +226,14 @@ echo "→ Собираю образ"
 if [[ "$REUSE_VERIFIED_ARTIFACT" == "1" ]]; then
   echo "  Использую уже проверенный artifact; новый DMG не создаётся."
 elif [[ "$REUSE_VERIFIED_ARTIFACT" == "0" ]]; then
-  DEVELOPER_ID="$DEVELOPER_ID" NOTARY_PROFILE="$NOTARY_PROFILE" ./scripts/build-dmg.sh
+  DEVELOPER_ID="$DEVELOPER_ID" \
+  NOTARY_PROFILE="$NOTARY_PROFILE" \
+  NOTARY_KEY="$NOTARY_KEY" \
+  NOTARY_KEY_ID="$NOTARY_KEY_ID" \
+  NOTARY_ISSUER="$NOTARY_ISSUER" \
+  APPSTORECONNECT_CONFIG="$APPSTORECONNECT_CONFIG" \
+  REQUIRE_NOTARIZATION=1 \
+  ./scripts/build-dmg.sh
 else
   fail "REUSE_VERIFIED_ARTIFACT принимает только 0 или 1."
 fi

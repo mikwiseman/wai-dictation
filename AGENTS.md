@@ -6,8 +6,8 @@
 
 ## Приватный ключ Sparkle
 
-Единственный секрет проекта, который **переносим между машинами**: он привязан
-к продукту, а не к учётной записи Apple.
+Приватный ключ Sparkle переносится между машинами: он привязан к продукту,
+а не к учётной записи Apple.
 
 | | |
 |---|---|
@@ -38,33 +38,41 @@
 ./scripts/bootstrap-release-secrets.sh
 ```
 
-Скрипт достаёт ключ из 1Password, кладёт с правами `0600`, отказывается писать
-внутрь репозитория, не перезаписывает существующий файл без `FORCE=1` и
-проверяет ключ единственным честным способом — подписывает им пробный файл
-через `sign_update`. Значение ключа нигде не печатается.
+Скрипт проверяет существующий Sparkle key или восстанавливает его из 1Password,
+а затем проверяет file-based App Store Connect credentials. Если Sparkle key уже
+перенесён, `op` для выпуска не нужен. Значения ключей и ID нигде не печатаются.
 
-Нужен установленный и подключённый [1Password CLI](https://developer.1password.com/docs/cli/get-started/),
-и в приложении 1Password — Settings → Developer → **Integrate with 1Password CLI**.
+Нужны `~/.appstoreconnect/config.json` и выбранный `.p8` в
+`~/.appstoreconnect/private_keys/`; оба файла имеют права `0600`.
 
-## Чего перенести нельзя
+## App Store Connect и Developer ID
 
-Эти два секрета привязаны к учётной записи разработчика Apple, а не к проекту,
-и в 1Password их нет:
+Предпочтительная нотаризация использует App Store Connect Team API key:
 
-- **сертификат Developer ID** — Xcode → Settings → Accounts, либо `.p12` из
-  вашего архива. Проверить: `security find-identity -v -p codesigning`;
-- **профиль нотаризации** — `xcrun notarytool store-credentials`, спросит
-  Apple ID и app-specific password.
+- config: `~/.appstoreconnect/config.json` (`key_filepath`, `key_id`, `issuer_id`);
+- key: `~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`;
+- права обоих файлов: `0600`;
+- recovery backup: 1Password `Development`, item `Wai Dictation App Store Connect API key`, ID `zavvctbf6g4el7ygzphjb7mvu4`.
 
-Без них `release.sh` останавливается намеренно: неподписанный образ
-устанавливать нельзя, а `--deep` при подписи запрещён — он теряет entitlements
-у `Downloader.xpc` и ломает установку обновления.
+Release-скрипты никогда не читают App Store Connect credentials через `op`. Их
+переносят между доверенными release-машинами по защищённому каналу и проверяют
+`xcrun notarytool history --key ... --key-id ... --issuer ...`.
+
+Отдельно нужен **сертификат Developer ID** с private key — Xcode → Settings →
+Accounts либо `.p12` из архива. Проверить:
+`security find-identity -v -p codesigning`. Без него `release.sh` останавливается.
 
 ## Выпуск
 
 ```bash
-SPARKLE_KEY_PATH="$HOME/.wai-dictation/sparkle-key" DEVELOPER_ID="Developer ID Application: WaiWai, LLC (R4A779QVVY)" NOTARY_PROFILE="имя-профиля" ./scripts/release.sh
+SPARKLE_KEY_PATH="$HOME/.wai-dictation/sparkle-key" \
+DEVELOPER_ID="Developer ID Application: WaiWai, LLC (R4A779QVVY)" \
+./scripts/release.sh
 ```
+
+`release.sh` по умолчанию читает App Store Connect config и передаёт `notarytool`
+`--key`, `--key-id` и `--issuer`. Профиль Keychain остаётся только явной
+альтернативой; смешивать два способа запрещено.
 
 Скрипт сам проверит: чистое дерево, ветку `main`, совпадение с `origin/main`,
 зелёный CI на этом SHA, наличие заметок к релизу и два файла, которых без

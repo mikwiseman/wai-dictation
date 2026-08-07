@@ -8,12 +8,12 @@
 #
 #   DEVELOPER_ID   — «Developer ID Application: …»
 #   NOTARY_PROFILE — профиль notarytool, заведённый через `xcrun notarytool store-credentials`
-# Если профиль не задан, используются ключ и идентификаторы из
-# ~/.appstoreconnect/config.json — без вывода секретов в лог.
+# По умолчанию используются key_filepath, key_id и issuer_id из
+# ~/.appstoreconnect/config.json. Профиль и API key нельзя смешивать.
 #
 # Запуск:
 #   ./scripts/build-dmg.sh            Debug-probe: Wai Dictation Dev
-#   DEVELOPER_ID="…" NOTARY_PROFILE="…" ./scripts/build-dmg.sh
+#   DEVELOPER_ID="…" ./scripts/build-dmg.sh
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,8 +32,10 @@ NOTARY_ISSUER="${NOTARY_ISSUER:-}"
 APPSTORECONNECT_CONFIG="${APPSTORECONNECT_CONFIG:-$HOME/.appstoreconnect/config.json}"
 REQUIRE_NOTARIZATION="${REQUIRE_NOTARIZATION:-0}"
 BUILD_NUMBER_OVERRIDE="${BUILD_NUMBER_OVERRIDE:-}"
-NOTARY_ARGS=()
 BUILD_OVERRIDES=()
+
+# shellcheck source=lib/notary-credentials.sh
+source scripts/lib/notary-credentials.sh
 
 if [[ -n "$BUILD_NUMBER_OVERRIDE" ]]; then
   [[ "$BUILD_NUMBER_OVERRIDE" =~ ^[0-9]+$ ]] || {
@@ -56,49 +58,17 @@ else
   DMG_BASENAME="WaiDictationDev"
 fi
 
-expand_user_path() {
-  case "$1" in
-    "~") printf '%s\n' "$HOME" ;;
-    "~/"*) printf '%s\n' "$HOME/${1#"~/"}" ;;
-    *) printf '%s\n' "$1" ;;
-  esac
-}
-
-read_appstoreconnect_config_value() {
-  [[ -f "$APPSTORECONNECT_CONFIG" ]] || return 0
-  /usr/bin/plutil -extract "$1" raw -o - "$APPSTORECONNECT_CONFIG" 2>/dev/null || true
-}
-
-load_notary_credentials() {
-  if [[ -z "$NOTARY_PROFILE" && -z "$NOTARY_KEY" && -z "$NOTARY_KEY_ID" ]]; then
-    local key_path
-    key_path=$(read_appstoreconnect_config_value key_filepath)
-    NOTARY_KEY_ID=$(read_appstoreconnect_config_value key_id)
-    NOTARY_ISSUER=$(read_appstoreconnect_config_value issuer_id)
-    if [[ -n "$key_path" ]]; then
-      NOTARY_KEY=$(expand_user_path "$key_path")
+if [[ -n "$NOTARY_PROFILE" || -n "$NOTARY_KEY" || -n "$NOTARY_KEY_ID" \
+   || -n "$NOTARY_ISSUER" || -f "$APPSTORECONNECT_CONFIG" \
+   || "$REQUIRE_NOTARIZATION" == "1" ]]; then
+  if ! load_notary_credentials; then
+    if [[ "$REQUIRE_NOTARIZATION" == "1" ]]; then
+      echo "Для installable beta обязательны корректные credentials нотаризации." >&2
     fi
+    exit 1
   fi
-
-  if [[ -n "$NOTARY_PROFILE" ]]; then
-    NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
-  elif [[ -n "$NOTARY_KEY" && -n "$NOTARY_KEY_ID" ]]; then
-    [[ -f "$NOTARY_KEY" ]] || {
-      echo "Notary API key не найден по пути из конфигурации." >&2
-      return 1
-    }
-    NOTARY_ARGS=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID")
-    if [[ -n "$NOTARY_ISSUER" ]]; then
-      NOTARY_ARGS+=(--issuer "$NOTARY_ISSUER")
-    fi
-  fi
-
-  [[ ${#NOTARY_ARGS[@]} -gt 0 ]]
-}
-
-if ! load_notary_credentials && [[ "$REQUIRE_NOTARIZATION" == "1" ]]; then
-  echo "Для installable beta обязательны настроенные credentials нотаризации." >&2
-  exit 1
+else
+  NOTARY_ARGS=()
 fi
 
 echo "→ Генерирую проект"

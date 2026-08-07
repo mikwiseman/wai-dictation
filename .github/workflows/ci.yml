@@ -98,6 +98,11 @@ jobs:
       - name: Проверить pinned XcodeGen
         run: ./scripts/pinned-xcodegen.sh >/dev/null
 
+      - name: Проверить bootstrap и notary credentials
+        run: |
+          ./scripts/tests/test-notary-credentials.sh
+          ./scripts/tests/test-bootstrap-release-secrets.sh
+
       # Всё остальное в CI собирает Debug под текущее назначение. Релиз идёт
       # другой дорогой: конфигурация Release, архив, `generic/platform=macOS`
       # и arm64-only artifact. Поломка, которая живёт только на этой дороге,

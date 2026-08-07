@@ -97,7 +97,22 @@ grep SUPublicEDKey apps/macos/project.yml
 ### 3. Сертификат и нотаризация
 
 - Сертификат **Developer ID Application** в связке ключей.
-- Профиль нотаризации: `xcrun notarytool store-credentials`.
+- Team API key App Store Connect:
+  - `~/.appstoreconnect/config.json`, mode `0600`;
+  - `key_filepath`, `key_id`, `issuer_id`;
+  - `.p8` в `~/.appstoreconnect/private_keys/`, mode `0600`.
+
+Подготовить и проверить локальные credentials без вывода секретов:
+
+```bash
+./scripts/bootstrap-release-secrets.sh
+```
+
+Скрипт восстанавливает Sparkle key из 1Password. App Store Connect credentials
+остаются file-based: скрипт проверяет config и при необходимости копирует
+выбранный `.p8` в стандартный каталог. `release.sh` передаёт `notarytool`
+`--key`, `--key-id` и `--issuer`. Сохранённый `NOTARY_PROFILE` поддерживается
+только как явная альтернатива; смешивать его с API key запрещено.
 
 Ненотаризованный образ Gatekeeper не пустит, и обновление превратится в
 сломанное приложение у всех, кто его поставил.
@@ -312,7 +327,6 @@ swift verify.swift "$KEY" "$DMG" "$SIG"
 ```bash
 SPARKLE_KEY_PATH=~/.wai-dictation/sparkle-key \
 DEVELOPER_ID="Developer ID Application: Имя (TEAMID)" \
-NOTARY_PROFILE="имя профиля notarytool" \
 ./scripts/release.sh
 ```
 
@@ -360,7 +374,6 @@ NOTARY_PROFILE="имя профиля notarytool" \
 ```bash
 SPARKLE_KEY_PATH=~/.wai-dictation/sparkle-key \
 DEVELOPER_ID="Developer ID Application: Имя (TEAMID)" \
-NOTARY_PROFILE="имя профиля notarytool" \
 REUSE_VERIFIED_ARTIFACT=1 \
 ./scripts/release.sh
 ```
