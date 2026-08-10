@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>OpenRamble</title>
+    <link>https://mikwiseman.github.io/wai-dictation/appcast.xml</link>
+    <description>OpenRamble updates</description>
+    <language>en</language>
+    <item>
+      <title>0.3.3</title>
+      <pubDate>Mon, 10 Aug 2026 15:46:02 +0300</pubDate>
+      <sparkle:version>8</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description>&lt;h2&gt;OpenRamble 0.3.3&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Uses the correct OpenRamble product name without spaces throughout the app, installer, repository, update feed, and website.&lt;/li&gt;&lt;li&gt;Starts an explicitly requested model download on the current network, including hotspots and Low Data Mode, instead of remaining stuck at zero bytes.&lt;/li&gt;&lt;li&gt;Keeps the exact model download failure visible with a Try Again action instead of immediately clearing it.&lt;/li&gt;&lt;li&gt;Returns OpenRamble to the foreground after microphone access is granted so onboarding can continue in the same window.&lt;/li&gt;&lt;/ul&gt;</description>
+      <enclosure url="https://github.com/mikwiseman/openramble/releases/download/v0.3.3/OpenRamble-0.3.3.dmg" length="4720114" type="application/octet-stream" sparkle:edSignature="zGZqPxLy09YddafJD61a0GNOl8CqBEZZbmkZ9vWVZa06C7pWzCscwBkfmvbkQJYQiP6yXfhC4hSmZb/BACBDCA==" />
+    </item>
+  </channel>
+</rss>
