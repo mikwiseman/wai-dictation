@@ -27,8 +27,8 @@ struct MenuContent: View {
 
         if state.dictationState == .preparing || state.dictationState == .listening {
             Divider()
-            Button("Stop and insert") { state.finishCurrentDictation() }
-            Button("Cancel and delete recording", role: .destructive) {
+            Button("Stop and Insert") { state.finishCurrentDictation() }
+            Button("Cancel Dictation", role: .destructive) {
                 state.cancelCurrentDictation()
             }
         }
@@ -36,31 +36,31 @@ struct MenuContent: View {
         if !state.isDictationReady {
             Divider()
             setupHints
-            Button("Run setup again") {
+            Button("Run Setup Again…") {
                 showOnboarding()
                 openWindow(id: "onboarding")
             }
         }
 
+        // Спасённое — без заголовков-секций: первая строка меню уже назвала
+        // беду, а пункты называют себя сами. Заголовок поверх трёх кнопок
+        // перегружал меню и читался как ещё одна ошибка.
         if state.recoveredText != nil {
             Divider()
-            // Заголовок над кнопками — как у блока с записью ниже. Без него три
-            // кнопки подряд не говорят, к чему они относятся, а панель с
-            // объяснением к этому моменту давно ушла с экрана.
-            Text("Text from the last dictation")
-            Button("Retry insert") { state.retryRecoveredText() }
-            Button("Copy text") { state.copyRecoveredText() }
-            Button("Delete saved text", role: .destructive) {
+            Button("Insert Last Dictation") { state.retryRecoveredText() }
+            Button("Copy Last Dictation") { state.copyRecoveredText() }
+            Button("Delete Saved Text", role: .destructive) {
                 state.deleteRecoveredText()
             }
         }
 
         if state.recoveredRecording != nil {
             Divider()
-            Text("Local recording after a failure")
-            Button("Retry transcription") { state.retryRecoveredRecording() }
+            Button("Transcribe Saved Recording") { state.retryRecoveredRecording() }
                 .disabled(!state.modelState.isReady || state.dictationState != .idle)
-            Button("Delete recording") { state.deleteRecoveredRecording() }
+            Button("Delete Saved Recording", role: .destructive) {
+                state.deleteRecoveredRecording()
+            }
         }
 
         // Правка последней диктовки. Пункт появляется только после успешной
@@ -92,11 +92,11 @@ struct MenuContent: View {
         if !state.accessibilityGranted {
             switch state.accessibilityState {
             case .denied:
-                Button("Grant Accessibility access") { state.requestAccessibility() }
+                Button("Grant Accessibility Access") { state.requestAccessibility() }
             case .waitingForSettings:
-                Button("Open Accessibility settings") { state.openAccessibilitySettings() }
+                Button("Open Accessibility Settings") { state.openAccessibilitySettings() }
             case .restartRequired:
-                Button("Relaunch to apply access") { state.restartForAccessibility() }
+                Button("Relaunch to Apply Access") { state.restartForAccessibility() }
             case .repairRequired, .failed:
                 Text("Accessibility access needs repair")
             case .repairing:
@@ -106,7 +106,7 @@ struct MenuContent: View {
             }
         }
         if !state.microphoneGranted {
-            Button("Allow microphone") { state.requestMicrophone() }
+            Button("Allow Microphone") { state.requestMicrophone() }
         }
         // Через тот же тип, что и оба экрана. Раньше меню знало про модель один
         // булев «готова или нет» и предлагало «Скачать» даже посреди загрузки —

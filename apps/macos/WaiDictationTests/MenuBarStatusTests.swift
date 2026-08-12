@@ -8,10 +8,21 @@ import XCTest
 /// Картинка без описания для незрячего человека не существует вовсе: VoiceOver
 /// прочитает имя системного символа или промолчит.
 final class MenuBarStatusTests: XCTestCase {
+    /// Работа обозначается бейджем-многоточием на микрофоне: он появляется,
+    /// когда распознавание пошло, и исчезает вместе с покоем. Цветной точки в
+    /// строке меню не бывает — MenuBarExtra принудительно обесцвечивает
+    /// значок, а во время записи системную оранжевую точку у Control Center
+    /// показывает сама macOS.
     func testЗначокРазличаетЗаписьРаботуИПокой() {
         XCTAssertEqual(MenuBarStatus.iconName(state: .listening, isDictationReady: true), "mic.fill")
-        XCTAssertEqual(MenuBarStatus.iconName(state: .transcribing, isDictationReady: true), "waveform")
-        XCTAssertEqual(MenuBarStatus.iconName(state: .inserting, isDictationReady: true), "waveform")
+        XCTAssertEqual(
+            MenuBarStatus.iconName(state: .transcribing, isDictationReady: true),
+            "microphone.badge.ellipsis"
+        )
+        XCTAssertEqual(
+            MenuBarStatus.iconName(state: .inserting, isDictationReady: true),
+            "microphone.badge.ellipsis"
+        )
         XCTAssertEqual(MenuBarStatus.iconName(state: .idle, isDictationReady: true), "mic")
     }
 
@@ -176,7 +187,9 @@ final class MenuRecoveryLineTests: XCTestCase {
     }
 
     func testНевставленныйТекстНазываетсяВПервойСтроке() {
-        XCTAssertEqual(line(text: true), "Last dictation wasn't inserted — the text is saved below")
+        // Без «saved below»: заголовков-секций в меню больше нет, кнопки под
+        // строкой называют себя сами — «Insert Last Dictation», «Copy…».
+        XCTAssertEqual(line(text: true), "Last dictation wasn't inserted")
     }
 
     func testСохранённаяЗаписьТожеНазывается() {
@@ -226,7 +239,7 @@ final class MenuBarBadgeTests: XCTestCase {
         )
         XCTAssertEqual(
             MenuBarStatus.iconName(state: .transcribing, isDictationReady: true, hasRecoveredWork: true),
-            "waveform"
+            "microphone.badge.ellipsis"
         )
     }
 

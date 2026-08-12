@@ -736,7 +736,7 @@ final class AppStateTests: XCTestCase {
     func testЗапускИмпортируетБрошенныеЗаписиВRecovery() async throws {
         let paths = AppPaths(root: root)
         let orphan = try paths.takes().appending(path: "take-старая.wav")
-        try writeAbandonedTestWAV(to: orphan)
+        try writeAbandonedTestWAV(to: orphan, sampleBytes: 32_000)
 
         let state = makeState()
         for _ in 0..<40 where state.recoveredRecording == nil {
@@ -751,7 +751,90 @@ final class AppStateTests: XCTestCase {
         let payloadSize = repaired[40..<44].withUnsafeBytes {
             UInt32(littleEndian: $0.load(as: UInt32.self))
         }
-        XCTAssertEqual(payloadSize, 3200)
+        XCTAssertEqual(payloadSize, 32_000)
+        // Спасение случилось прямо сейчас — об этом говорим.
+        let notices = await overlay.notices
+        XCTAssertTrue(notices.contains { $0.message.contains("interruption") })
+    }
+
+    /// Лефтовер прошлого запуска — не событие этого.
+    ///
+    /// Раньше каждый запуск объявлял «найдена запись после сбоя», даже когда
+    /// сбой был неделю назад: человек видел ошибку там, где ничего не
+    /// случилось. Старое остаётся доступным в меню — но молча.
+    func testСтараяЗаписьНеОбъявляетсяПриКаждомЗапуске() async throws {
+        let paths = AppPaths(root: root)
+        let leftover = try paths.audioRecovery().appending(path: "recording-старая.wav")
+        try Data(repeating: 7, count: 64_000).write(to: leftover)
+
+        let state = makeState()
+        for _ in 0..<40 where state.recoveredRecording == nil {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        XCTAssertNotNil(state.recoveredRecording, "Запись остаётся доступной в меню")
+        let notices = await overlay.notices
+        XCTAssertTrue(
+            notices.isEmpty,
+            "Про прошлое при запуске молчим: \(notices.map(\.message))"
+        )
+        XCTAssertNil(state.lastNotice)
+    }
+
+    /// Обрывок короче предела распознавания не переживает запуск.
+    ///
+    /// Случайное нажатие, убитое вместе с приложением, — не «запись после
+    /// сбоя»: главный путь такие молча удаляет, и импорт обязан так же.
+    func testОбрывокКорочеПределаНеСтановитсяОшибкойПриЗапуске() async throws {
+        let paths = AppPaths(root: root)
+        let blip = try paths.takes().appending(path: "take-обрывок.wav")
+        try writeAbandonedTestWAV(to: blip, sampleBytes: 3200)
+
+        let state = makeState()
+        for _ in 0..<30 {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        XCTAssertNil(state.recoveredRecording)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: blip.path))
+        let notices = await overlay.notices
+        XCTAssertTrue(notices.isEmpty, "Обрывок — не событие: \(notices.map(\.message))")
+    }
+
+    /// Повтор записи, в которой ничего не распозналось, — не ошибка.
+    ///
+    /// Главный путь на пустой результат говорит «ничего не распознано» и
+    /// удаляет запись. Повтор из меню раньше на том же исходе показывал
+    /// «Retry transcription failed» и хранил запись вечно: тупик, из которого
+    /// человек выходил только ручным удалением.
+    func testПовторПустойЗаписиУдаляетЕёБезОшибки() async throws {
+        try installModelMarker()
+        let paths = AppPaths(root: root)
+        let leftover = try paths.audioRecovery().appending(path: "recording-тихая.wav")
+        try Data(repeating: 7, count: 64_000).write(to: leftover)
+        harness.transcription.text = ""
+
+        let state = makeState()
+        await state.refreshModelState()
+        for _ in 0..<40 where state.recoveredRecording == nil {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertNotNil(state.recoveredRecording)
+
+        state.retryRecoveredRecording()
+        for _ in 0..<60 where state.recoveredRecording != nil {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        XCTAssertNil(state.recoveredRecording, "Пустая запись не хранится вечно")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: leftover.path))
+        XCTAssertEqual(state.lastNotice?.kind, .info)
+        XCTAssertEqual(state.lastNotice?.message.contains("Nothing was recognized"), true)
+        XCTAssertEqual(state.dictationState, .idle)
     }
 }
 

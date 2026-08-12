@@ -431,13 +431,13 @@ public final class DictationController {
         let message: String
         if let insertion = error as? TextInsertionError, insertion == .secureInputActive {
             // Не сбой, а нормальная ситуация: активно поле пароля.
-            message = "Text not inserted: secure input is active. Copy and Retry are in the menu."
+            message = "Text not inserted: secure input is active. Your text is saved in the menu."
         } else if let insertion = error as? TextInsertionError, insertion == .protectedClipboard {
             // После перехода на снимок «любые байты как есть» сюда попадают
             // только пароль из менеджера, file promise и буфер больше 16 МиБ.
-            message = "Your clipboard holds a password or a file — it was left untouched. Your text: Copy and Retry in the menu."
+            message = "Your clipboard holds a password or a file — it was left untouched. Your text is saved in the menu."
         } else {
-            message = "The text couldn't be inserted. Copy and Retry are in the menu."
+            message = "The text couldn't be inserted. It's saved in the menu."
         }
 
         let notice = DictationNotice(kind: .warning, message: message, recoverableText: text)
@@ -526,17 +526,29 @@ public final class DictationController {
                 return
             }
 
-            var saved: URL?
-            if let recording {
-                saved = try? await self.recordingRecovery.preserve(recording.url)
+            let notice: DictationNotice
+            if let recording,
+               !DictationDurationPolicy.isWorthTranscribing(duration: recording.duration) {
+                // Устройство пропало через мгновение после старта: в записи нет
+                // ни слова, спасать нечего. Главный путь такие обрывки молча
+                // удаляет — здесь называем причину обрыва и ничего больше,
+                // иначе секундный сбой оставлял бы «запись для повтора», повтор
+                // которой навсегда даёт пустой результат.
+                await self.discard(recording.url)
+                notice = DictationNotice(kind: .failure, message: message)
+            } else {
+                var saved: URL?
+                if let recording {
+                    saved = try? await self.recordingRecovery.preserve(recording.url)
+                }
+                notice = DictationNotice(
+                    kind: .failure,
+                    message: saved == nil
+                        ? message + " Couldn't save the recording for retry."
+                        : message + " The recording is saved locally — you can retry or delete it.",
+                    recoveryAudio: saved
+                )
             }
-            let notice = DictationNotice(
-                kind: .failure,
-                message: saved == nil
-                    ? message + " Couldn't save the recording for retry."
-                    : message + " The recording is saved locally — you can retry or delete it.",
-                recoveryAudio: saved
-            )
             await self.report(notice)
             await self.cleanup(session: session)
         }

@@ -46,7 +46,7 @@ struct FixDictationView: View {
                 // мышь, а окно с текстовым полем притягивает клавиатуру.
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Learn corrections") {
+                Button("Learn Corrections") {
                     let learned = state.learnCorrections(editedText: edited)
                     if learned == 0 {
                         // Ничего не выучено — говорим прямо, а не молчим.
@@ -56,6 +56,7 @@ struct FixDictationView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(state.lastDictation == nil || edited == state.lastDictation?.insertedText)
+                .prominentActionButtonStyle()
             }
         }
         .padding(20)

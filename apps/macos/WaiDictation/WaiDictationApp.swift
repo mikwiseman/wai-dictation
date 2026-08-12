@@ -57,6 +57,9 @@ struct WaiDictationApp: App {
             OnboardingView(state: state) { onboardingCompleted = true }
         }
         .windowResizability(.contentSize)
+        // Без полосы заголовка: у мастера первого запуска нет ни документа,
+        // ни имени, которое стоило бы показывать, — только содержимое.
+        .windowStyle(.hiddenTitleBar)
 
         Window("Fix Last Dictation", id: "fix-dictation") {
             FixDictationView(state: state)

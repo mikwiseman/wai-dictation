@@ -296,6 +296,55 @@ final class RecordingCleanupTests: XCTestCase {
         XCTAssertEqual(controller.state, .idle)
     }
 
+    /// Устройство пропало через мгновение после старта — спасать нечего.
+    ///
+    /// Обрывок короче предела распознавания главный путь молча удаляет:
+    /// человек ничего не потерял. Спасение обязано вести себя так же, иначе
+    /// секундный сбой устройства оставляет «запись для повтора», повтор
+    /// которой навсегда даёт пустой результат.
+    func testRescueOfTooShortRecordingDiscardsInsteadOfSaving() async throws {
+        let capture = FileCapture(directory: directory, duration: 0.1)
+        let recovered = directory.appending(path: "RecoveredAudio", directoryHint: .isDirectory)
+        let overlay = CollectingOverlay()
+        var notices: [DictationNotice] = []
+        let controller = DictationController(
+            capture: capture,
+            transcribe: { _ in ASRResult(text: "распознано", audioDuration: 3, processingDuration: 0.1) },
+            inserter: FakeInserter(),
+            overlay: overlay,
+            sounds: FakeSounds(),
+            recordingRecovery: RecordingRecoveryStore(directory: recovered)
+        )
+        controller.onNotice = { notices.append($0) }
+
+        controller.begin(handsFree: false, isEnabled: true, isModelReady: true)
+        await settle()
+        XCTAssertEqual(controller.state, .listening)
+
+        controller.preserveActiveRecording(reason: "Устройство отключилось.")
+        for _ in 0..<100 where controller.state != .idle {
+            await Task.yield()
+            try await Task.sleep(for: .milliseconds(5))
+        }
+
+        let saved = (try? FileManager.default.contentsOfDirectory(at: recovered, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "wav" } ?? []
+        XCTAssertTrue(saved.isEmpty, "Обрывок короче предела не сохраняется: \(saved)")
+        let takes = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "wav" }
+        XCTAssertTrue(takes.isEmpty, "И в Takes не остаётся: \(takes)")
+
+        XCTAssertTrue(notices.allSatisfy { $0.recoveryAudio == nil })
+        XCTAssertTrue(
+            notices.contains { $0.message.contains("Устройство отключилось.") },
+            "Причину обрыва называть всё равно обязаны: \(notices.map(\.message))"
+        )
+        XCTAssertFalse(
+            notices.contains { $0.message.contains("saved locally") || $0.message.contains("Couldn't save") },
+            "Про спасение записи, которой нет, говорить нечего: \(notices.map(\.message))"
+        )
+    }
+
     func testRecordingIsDeletedWhenCancelledDuringTranscription() async throws {
         // Отмена приходит, когда запись уже закрыта и лежит на диске: прервать
         // тут нечего, а удалить — обязательно.

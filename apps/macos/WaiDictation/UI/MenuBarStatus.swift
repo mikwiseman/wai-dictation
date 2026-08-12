@@ -13,7 +13,19 @@ enum MenuBarStatus {
     ) -> String {
         switch state {
         case .listening: return "mic.fill"
-        case .transcribing, .inserting: return "waveform"
+        case .transcribing, .inserting:
+            // Работа обозначается бейджем-многоточием: он появляется, когда
+            // распознавание пошло, и исчезает вместе с покоем. Цветную точку в
+            // строке меню сделать нельзя — MenuBarExtra принудительно
+            // обесцвечивает значок до template, — а во время записи оранжевую
+            // точку у Control Center показывает сама macOS. Анимировать тоже
+            // нельзя: SwiftUI-анимация в NSStatusItem на Tahoe сломана, смена
+            // статичных значков — единственный надёжный язык состояния.
+            if #available(macOS 15, *) {
+                return "microphone.badge.ellipsis"
+            }
+            // На macOS 14 символа с бейджем ещё нет.
+            return "waveform"
         case .preparing, .idle:
             // Спасённый текст или запись видны только внутри меню — а меню
             // открывают, когда что-то заподозрили. Восклицательный бейдж на
@@ -59,7 +71,8 @@ enum MenuBarStatus {
     /// потому что закрыть её нечем — фокуса она не берёт и кнопки закрытия у
     /// неё нет, а несгораемое окошко поверх чужой работы было бы хуже беды,
     /// которую оно объясняет. Значит, объяснение обязано где-то осесть
-    /// насовсем, и это место — меню: пункты Retry/Copy тут же под строкой.
+    /// насовсем, и это место — меню: пункты «Insert Last Dictation» и
+    /// «Copy Last Dictation» тут же под строкой.
     /// Раньше сообщение «текст не вставлен» просто исчезало, и человек, который
     /// отвернулся, терял и причину, и знание, что текст ещё жив.
     static func statusLine(
@@ -73,9 +86,10 @@ enum MenuBarStatus {
         switch state {
         case .idle:
             // Текст важнее записи: он уже распознан, и до готового результата
-            // человеку остался один пункт меню.
+            // человеку остался один пункт меню. Куда идти, объясняют сами
+            // пункты под строкой — «Insert Last Dictation», «Copy…».
             if hasRecoveredText {
-                return "Last dictation wasn't inserted — the text is saved below"
+                return "Last dictation wasn't inserted"
             }
             if hasRecoveredRecording {
                 return "A recording is waiting to be transcribed"

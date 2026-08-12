@@ -131,7 +131,6 @@ public final class DictationOverlay: OverlayPresenting {
 protocol PreviewPresenting: AnyObject {
     func updatePreview(confirmed: String, volatile: String)
     func updateInputLevel(_ level: Float)
-    func showSilenceHint()
 }
 
 @MainActor
@@ -146,8 +145,6 @@ final class OverlayModel: ObservableObject {
     @Published private(set) var previewVolatile: String = ""
     /// Пик уровня микрофона (0…1) — точка записи пульсирует вместе с голосом.
     @Published private(set) var inputLevel: Float = 0
-    /// Слушаем дольше двух секунд, а сигнала нет: скорее всего, не тот микрофон.
-    @Published private(set) var showsSilenceHint = false
 
     var hasPreview: Bool { !previewConfirmed.isEmpty || !previewVolatile.isEmpty }
 
@@ -199,7 +196,6 @@ final class OverlayModel: ObservableObject {
             previewConfirmed = ""
             previewVolatile = ""
             inputLevel = 0
-            showsSilenceHint = false
         }
         setElapsed(elapsed, ticking: state == .listening)
         setVisible(true)
@@ -211,34 +207,14 @@ final class OverlayModel: ObservableObject {
     func updatePreview(confirmed: String, volatile: String) {
         previewConfirmed = confirmed
         previewVolatile = volatile
-        if !confirmed.isEmpty || !volatile.isEmpty { showsSilenceHint = false }
     }
 
-    /// Ярлык панели для VoiceOver — вместе с подсказкой о тишине, если она есть.
-    var accessibilityLabel: String {
-        let base = content.accessibilityLabel
-        return showsSilenceHint ? "\(Self.silenceHint) \(base)" : base
-    }
+    /// Ярлык панели для VoiceOver.
+    var accessibilityLabel: String { content.accessibilityLabel }
 
     func updateInputLevel(_ level: Float) {
         inputLevel = min(1, max(0, level))
     }
-
-    /// Сигнала нет уже дольше порога — сказать про микрофон.
-    ///
-    /// Объявляется вслух, в отличие от предпросмотра. Предпросмотр читать
-    /// нельзя — это поток слов поверх собственной речи человека; а вот
-    /// «микрофон вас не слышит» незрячему нужнее всех: он не видит ни
-    /// пульсирующей точки, ни пустого предпросмотра, и без объявления узнает о
-    /// мёртвом микрофоне только по пустому результату в конце.
-    func showSilenceHint() {
-        guard state == .listening, !hasPreview, !showsSilenceHint else { return }
-        showsSilenceHint = true
-        announcer.announce(Self.silenceHint, urgent: true)
-    }
-
-    /// Текст подсказки. Один на экран и на объявление: расходиться им нельзя.
-    static let silenceHint = "No sound detected — check your microphone."
 
     /// Показать сообщение и убрать его через положенное время.
     func showNotice(_ notice: DictationNotice) {
@@ -341,12 +317,15 @@ private struct OverlayView: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: model.inputLevel)
                 .padding(.top, 3)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.showsSilenceHint ? OverlayModel.silenceHint : content.title)
+                Text(content.title)
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                 if let subtitle = content.subtitle {
                     Text(subtitle)
                         .font(.system(size: 11))
+                        // Счётчик перерисовывается дважды в секунду: без
+                        // моноширинных цифр строка дрожит на каждой смене.
+                        .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -370,7 +349,13 @@ private struct OverlayView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(width: model.hasPreview ? 360 : 280, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        // Материал, а не Liquid Glass — решение, а не долг. Стекло преломляет
+        // только собственную иерархию вью: панель парит над чужими окнами, и
+        // преломлять ей нечего (рендер «за окном» на Tahoe к тому же кэшируется
+        // и не обновляется). HIG о том же: стекло — слой управления, HUD с
+        // текстом — содержимое, ему положен материал. Материал сам честно
+        // отвечает на «Уменьшить прозрачность».
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         // Панель читается одним элементом: цветная точка и счётчик по
         // отдельности не значат ничего.
         .accessibilityElement(children: .ignore)
@@ -397,9 +382,5 @@ extension DictationOverlay: PreviewPresenting {
 
     func updateInputLevel(_ level: Float) {
         model.updateInputLevel(level)
-    }
-
-    func showSilenceHint() {
-        model.showSilenceHint()
     }
 }

@@ -87,11 +87,11 @@ final class ModelStatusTests: XCTestCase {
 
         XCTAssertEqual(status.title, "Model needs repair")
         XCTAssertEqual(status.actions, [.repair])
-        XCTAssertEqual(status.title(for: .repair), "Redownload model — 586 MB")
+        XCTAssertEqual(status.title(for: .repair), "Redownload Model — 586 MB")
         // Добор после обновления называет только остаток, а не полный объём.
         XCTAssertEqual(
             ModelStatus.Action.repair.title(downloadMegabytes: 103),
-            "Redownload model — 103 MB"
+            "Redownload Model — 103 MB"
         )
         XCTAssertEqual(status.detail?.contains("damaged"), true)
     }

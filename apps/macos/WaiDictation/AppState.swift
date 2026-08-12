@@ -231,8 +231,6 @@ public final class AppState: ObservableObject {
     private var isRecoveryOperationActive = false
     /// Сообщение, которое ждёт конца сессии.
     private var noticeAfterSession: DictationNotice?
-    /// Отложенная подсказка «нет звука» — отменяется первым же живым сигналом.
-    private var silenceHintTask: Task<Void, Never>?
 
     /// Живой предпросмотр распознавания в панели. Украшение — выключается.
     @Published public var showLivePreview: Bool {
@@ -535,21 +533,26 @@ public final class AppState: ObservableObject {
         do {
             let result = try await recordingRecovery.importAbandoned(from: paths.takes())
             recoveredRecording = result.recordings.first
-            if recoveredRecording != nil {
-                notify(
-                    DictationNotice(
-                        kind: result.discardedCorruptCount == 0 ? .warning : .failure,
-                        message: result.discardedCorruptCount == 0
-                            ? "A local recording was found after an interruption — you can retry transcription or delete it."
-                            : "One recording was saved for retry. A damaged fragment couldn't be recovered and was deleted.",
-                        recoveryAudio: recoveredRecording
-                    )
-                )
-            } else if result.discardedCorruptCount > 0 {
+            // Объявляется только событие этого запуска: свежее спасение или
+            // свежая потеря. Лефтовер прошлой недели остаётся доступным в
+            // меню, но молча — иначе каждый запуск начинался бы с «ошибки»,
+            // за которой ничего не случилось.
+            if result.discardedCorruptCount > 0 {
                 notify(
                     DictationNotice(
                         kind: .failure,
-                        message: "An unfinished recording was damaged: it can't be recovered, the fragment was deleted."
+                        message: result.newlyImportedCount > 0
+                            ? "One recording was saved for retry. A damaged fragment couldn't be recovered and was deleted."
+                            : "An unfinished recording was damaged: it can't be recovered, the fragment was deleted.",
+                        recoveryAudio: result.newlyImportedCount > 0 ? recoveredRecording : nil
+                    )
+                )
+            } else if result.newlyImportedCount > 0 {
+                notify(
+                    DictationNotice(
+                        kind: .warning,
+                        message: "A local recording was found after an interruption — you can retry transcription or delete it.",
+                        recoveryAudio: recoveredRecording
                     )
                 )
             }
@@ -598,7 +601,7 @@ public final class AppState: ObservableObject {
                 notify(
                     DictationNotice(
                         kind: .warning,
-                        message: "Retry insert failed — the text is still available via Copy and Retry.",
+                        message: "The text still couldn't be inserted — it stays in the menu.",
                         recoverableText: recoveredText
                     )
                 )
@@ -639,13 +642,37 @@ public final class AppState: ObservableObject {
                     }
                 )(url)
                 let output = TextPipeline(replacements: replacements).process(result.text)
-                guard !output.text.isEmpty else { throw ASREngineError.inferenceFailed("empty result") }
+                guard !output.text.isEmpty else {
+                    // Пустой результат — не сбой: в записи не оказалось
+                    // различимой речи. Главный путь на этом исходе говорит
+                    // «ничего не распознано» и удаляет запись; повтор обязан
+                    // вести себя так же — иначе тупик: «ошибка» с вечным
+                    // повтором, из которого выход один — ручное удаление.
+                    do {
+                        try await recordingRecovery.delete(url)
+                        recoveredRecording = try await recordingRecovery.recordings().first
+                        notify(
+                            DictationNotice(
+                                kind: .info,
+                                message: "Nothing was recognized in the saved recording — it was deleted."
+                            )
+                        )
+                    } catch {
+                        notify(
+                            DictationNotice(
+                                kind: .failure,
+                                message: "Nothing was recognized, but the local recording couldn't be deleted: \(error.localizedDescription)"
+                            )
+                        )
+                    }
+                    return
+                }
                 recognizedText = output.text
             } catch {
                 notify(
                     DictationNotice(
                         kind: .failure,
-                        message: "Retry transcription failed. The recording is still saved locally.",
+                        message: "Transcription failed again. The recording is still saved in the menu.",
                         recoveryAudio: url
                     )
                 )
@@ -664,7 +691,7 @@ public final class AppState: ObservableObject {
                     notify(
                         DictationNotice(
                             kind: .warning,
-                            message: "The recording was transcribed, but the text wasn't inserted — Copy and Retry are in the menu.",
+                            message: "The recording was transcribed, but the text wasn't inserted — it's saved in the menu.",
                             recoverableText: recognizedText
                         )
                     )
@@ -673,7 +700,7 @@ public final class AppState: ObservableObject {
                     notify(
                         DictationNotice(
                             kind: .failure,
-                            message: "The text is available via Copy and Retry, but the local WAV couldn't be deleted: \(error.localizedDescription)",
+                            message: "The text is saved in the menu, but the local WAV couldn't be deleted: \(error.localizedDescription)",
                             recoverableText: recognizedText,
                             recoveryAudio: url
                         )
@@ -1356,12 +1383,6 @@ public final class AppState: ObservableObject {
         switch state {
         case .listening where showLivePreview:
             previewFeedGate.open()
-            silenceHintTask?.cancel()
-            silenceHintTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled else { return }
-                (self?.overlay as? PreviewPresenting)?.showSilenceHint()
-            }
             Task { [weak self] in
                 try? await transcriber.startPreview { confirmed, volatile in
                     Task { @MainActor in
@@ -1374,20 +1395,13 @@ public final class AppState: ObservableObject {
             break
         default:
             previewFeedGate.close()
-            silenceHintTask?.cancel()
-            silenceHintTask = nil
             Task { await transcriber.stopPreview() }
         }
     }
 
-    /// Пик уровня с микрофона — в пульс точки записи. Сигнал громче порога
-    /// отменяет подсказку «нет звука».
+    /// Пик уровня с микрофона — в пульс точки записи.
     private func registerInputLevel(_ peak: Float) {
         (overlay as? PreviewPresenting)?.updateInputLevel(peak)
-        if peak > 0.02 {
-            silenceHintTask?.cancel()
-            silenceHintTask = nil
-        }
     }
 
     /// Ошибка регистрации видима: молча оставить человека без автозапуска —

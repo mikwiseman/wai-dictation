@@ -35,10 +35,15 @@ final class OverlayContentTests: XCTestCase {
     // MARK: - Счётчик секунд
 
     /// Секунды — единственный признак, что запись правда идёт.
+    ///
+    /// Подпись короткая нарочно: «отпусти — вставится» человек уже делает
+    /// руками, держа клавишу, — учить этому на каждой диктовке незачем.
+    /// Остаётся выход: Esc. Полная инструкция живёт в объявлении VoiceOver —
+    /// для незрячего это единственный интерфейс.
     func testСчётчикПоказываетсяТолькоТамГдеОнЗначит() {
         XCTAssertEqual(
             content(.listening, elapsed: 7).subtitle,
-            "7 s · Hotkey — insert · Esc — delete"
+            "7 s · Esc to cancel"
         )
         XCTAssertEqual(content(.transcribing, elapsed: 12.4).subtitle, "12 s")
         XCTAssertNil(content(.preparing, elapsed: 3).subtitle)
@@ -49,7 +54,7 @@ final class OverlayContentTests: XCTestCase {
     func testСчётчикНеУходитВМинус() {
         XCTAssertEqual(
             content(.listening, elapsed: -2).subtitle,
-            "0 s · Hotkey — insert · Esc — delete"
+            "0 s · Esc to cancel"
         )
     }
 

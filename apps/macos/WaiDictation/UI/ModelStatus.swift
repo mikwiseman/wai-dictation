@@ -22,13 +22,17 @@ struct ModelStatus: Equatable {
 
         /// Кнопка называет настоящий объём: полный для чистой установки и
         /// только остаток — когда после обновления доскачивается подсказчик.
+        ///
+        /// Title Case, как у всех кнопок и пунктов меню macOS: эти же строки
+        /// стоят в строке меню рядом с «Run Setup Again…», и разнобой
+        /// регистров читался как небрежность.
         func title(downloadMegabytes: Int) -> String {
             switch self {
-            case .install: return "Download model — \(downloadMegabytes) MB"
-            case .retry: return "Try again"
-            case .repair: return "Redownload model — \(downloadMegabytes) MB"
-            case .cancel: return "Cancel download"
-            case .delete: return "Delete model"
+            case .install: return "Download Model — \(downloadMegabytes) MB"
+            case .retry: return "Try Again"
+            case .repair: return "Redownload Model — \(downloadMegabytes) MB"
+            case .cancel: return "Cancel Download"
+            case .delete: return "Delete Model"
             }
         }
 

@@ -223,8 +223,9 @@ final class AppStateIdleTests: XCTestCase {
     ///
     /// Движок остаётся запущенным, но кадры в него больше не приходят: человек
     /// говорит в тишину и узнал бы об этом только по пустому результату.
+    /// Запись длиннее предела распознавания — иначе спасать нечего.
     func testСменаМикрофонаПосредиЗаписиЕёЗаканчивает() async throws {
-        let state = try await makeReadyState()
+        let state = try await makeReadyState(recordingDuration: 2)
         monitor.onPress?()
         try await waitFor("началась запись") { state.dictationState == .listening }
 

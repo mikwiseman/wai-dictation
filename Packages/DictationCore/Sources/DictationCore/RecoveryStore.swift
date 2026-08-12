@@ -12,10 +12,16 @@ public protocol RecordingRecoveryStoring: Sendable {
 
 public struct AbandonedRecordingImportResult: Sendable, Equatable {
     public let recordings: [URL]
+    /// Сколько записей спасено именно этим импортом.
+    ///
+    /// Отличает «сейчас что-то случилось» от «лежит с прошлой недели»: старый
+    /// лефтовер — не событие этого запуска, и объявлять его заново не за что.
+    public let newlyImportedCount: Int
     public let discardedCorruptCount: Int
 
-    public init(recordings: [URL], discardedCorruptCount: Int) {
+    public init(recordings: [URL], newlyImportedCount: Int, discardedCorruptCount: Int) {
         self.recordings = recordings
+        self.newlyImportedCount = newlyImportedCount
         self.discardedCorruptCount = discardedCorruptCount
     }
 }
@@ -62,6 +68,7 @@ public actor RecordingRecoveryStore: RecordingRecoveryStoring {
         guard fileManager.fileExists(atPath: takesDirectory.path) else {
             return AbandonedRecordingImportResult(
                 recordings: try recordings(),
+                newlyImportedCount: 0,
                 discardedCorruptCount: 0
             )
         }
@@ -69,11 +76,23 @@ public actor RecordingRecoveryStore: RecordingRecoveryStoring {
             at: takesDirectory,
             includingPropertiesForKeys: nil
         )
+        var newlyImportedCount = 0
         var discardedCorruptCount = 0
         for entry in entries where entry.pathExtension.lowercased() == "wav" {
             do {
-                try repairAbandonedWAV(at: entry)
-                _ = try preserve(entry)
+                let payloadBytes = try repairAbandonedWAV(at: entry)
+                // Обрывок короче предела распознавания — случайное нажатие,
+                // пережившее kill, а не потерянная речь. Главный путь диктовки
+                // такие молча удаляет; импорт обязан вести себя так же, иначе
+                // человек при запуске видит «запись после сбоя», повтор которой
+                // навсегда даёт пустой результат.
+                guard DictationDurationPolicy.isWorthTranscribing(
+                    duration: TimeInterval(payloadBytes) / TimeInterval(Self.bytesPerSecond)
+                ) else {
+                    try fileManager.removeItem(at: entry)
+                    continue
+                }
+                if try preserve(entry) != nil { newlyImportedCount += 1 }
             } catch let error as CocoaError where error.code == .fileReadCorruptFile {
                 // Точно непригодный фрагмент не должен блокировать остальные
                 // записи после crash. Это только собственный WAVWriter-файл из
@@ -85,16 +104,25 @@ public actor RecordingRecoveryStore: RecordingRecoveryStoring {
         }
         return AbandonedRecordingImportResult(
             recordings: try recordings(),
+            newlyImportedCount: newlyImportedCount,
             discardedCorruptCount: discardedCorruptCount
         )
     }
+
+    /// Скорость потока собственного WAVWriter: 16 кГц × 16 бит × моно.
+    /// Формат прибит проверкой заголовка в `repairAbandonedWAV`.
+    private static let bytesPerSecond: Int64 = 32_000
 
     /// WAVWriter сначала кладёт 44-байтный заголовок с нулевыми размерами и
     /// исправляет их в `close()`. После kill/crash PCM уже на диске, но без
     /// этой починки системный декодер считает запись пустой. Принимаем только
     /// точный формат собственного writer: чужой или обрезанный файл не должен
     /// маскироваться под пригодный Retry.
-    private func repairAbandonedWAV(at url: URL) throws {
+    ///
+    /// Возвращает размер PCM-payload: по нему решается, есть ли в записи что
+    /// распознавать.
+    @discardableResult
+    private func repairAbandonedWAV(at url: URL) throws -> Int64 {
         let attributes = try fileManager.attributesOfItem(atPath: url.path)
         guard let fileSize = attributes[.size] as? NSNumber else {
             throw CocoaError(.fileReadUnknown)
@@ -136,6 +164,7 @@ public actor RecordingRecoveryStore: RecordingRecoveryStoring {
             try? handle.close()
             throw error
         }
+        return payloadBytes
     }
 
     private func readUInt16(_ data: Data, at offset: Int) -> UInt16 {

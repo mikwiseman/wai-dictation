@@ -16,6 +16,10 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var step: OnboardingStep = .welcome
+    /// Куда шёл последний переход: вперёд уезжает влево, назад — вправо.
+    /// Симметрия путей — то, что делает мастер предсказуемым: шаг возвращается
+    /// той же дорогой, которой ушёл.
+    @State private var movingForward = true
     /// Что человек продиктовал на пробу.
     @State private var trial = ""
     /// Вручную напечатанный текст не считается пробой: ждём именно успешную
@@ -34,43 +38,22 @@ struct OnboardingView: View {
             // двух разных.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding(32)
+                .padding(.horizontal, 36)
+                .padding(.top, 32)
+                .padding(.bottom, 20)
+                // Каждый шаг — отдельная страница: вперёд она уезжает влево,
+                // назад — вправо, теми же путями в обе стороны. При
+                // «Уменьшить движение» — мгновенная смена без езды.
+                .id(step)
+                .transition(
+                    reduceMotion
+                        ? .identity
+                        : .push(from: movingForward ? .trailing : .leading)
+                )
 
-            Divider()
-
-            VStack(spacing: 6) {
-                HStack {
-                    if step.hasPrevious {
-                        Button("Back") { back() }
-                            .accessibilityHint("Go back to step \(step.rawValue)")
-                    }
-                    Spacer()
-                    Text(step.progressText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(step.progressAccessibilityLabel)
-                    Spacer()
-                    nextButton
-                }
-
-                // Почему кнопка погашена. Без этой строки человек видит мёртвую
-                // «Дальше» и не знает, чего от него ждут, — а для незрячего
-                // установка на этом просто заканчивается.
-                //
-                // Строка есть всегда, даже пустая: иначе её появление сдвигало
-                // подвал вместе с кнопками вверх, а область содержимого — вниз.
-                // Шаг, где разрешение только что выдали, дёргался целиком.
-                Text(blockReason ?? " ")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .accessibilityHidden(blockReason == nil)
-            }
-            .padding()
+            footer
         }
-        .frame(width: 560, height: 420)
+        .frame(width: 520, height: 560)
         .confirmationDialog(
             "Repair Accessibility access?",
             isPresented: $showAccessibilityRepairConfirmation,
@@ -95,20 +78,79 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: - Подвал
+
+    /// Назад · точки прогресса · Дальше — и причина, если «Дальше» погашена.
+    private var footer: some View {
+        VStack(spacing: 8) {
+            Divider()
+
+            ZStack {
+                // Точки прижаты к центру окна, а не к соседним кнопкам: без
+                // ZStack исчезновение «Back» на первом шаге сдвигало бы их.
+                OnboardingProgressDots(step: step)
+
+                HStack {
+                    if step.hasPrevious {
+                        Button("Back") { back() }
+                            .accessibilityHint("Go back to step \(step.rawValue)")
+                    }
+                    Spacer()
+                    nextButton
+                }
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+
+            // Почему кнопка погашена. Без этой строки человек видит мёртвую
+            // «Дальше» и не знает, чего от него ждут, — а для незрячего
+            // установка на этом просто заканчивается.
+            //
+            // Строка есть всегда, даже пустая: иначе её появление сдвигало
+            // подвал вместе с кнопками вверх, а область содержимого — вниз.
+            // Шаг, где разрешение только что выдали, дёргался целиком.
+            Text(blockReason ?? " ")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityHidden(blockReason == nil)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+        }
+    }
+
     // MARK: - Шаги
 
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Dictation that never sends your speech anywhere")
-                .font(.title2.bold())
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+
+            // Герб продукта. Обычный системный символ в цветном круге — как у
+            // ассистентов настройки самой macOS; стекла здесь нет намеренно:
+            // Liquid Glass — слой управления, а не украшение содержимого.
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.gradient)
+                    .frame(width: 76, height: 76)
+                heroGlyph
+            }
+            .accessibilityHidden(true)
+
+            Text("Dictation that stays on your Mac")
+                .font(.largeTitle.bold())
+                .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("Press a key, speak, release — the text appears where your cursor was. In any app.")
+            Text("Press a key, speak, release — the text appears at your cursor. In any app.")
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
-            Divider()
+            Spacer(minLength: 8)
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 OnboardingPoint(
                     symbol: "airplane",
                     text: "Speech is recognized by a model on your disk. Works on a plane."
@@ -125,18 +167,18 @@ struct OnboardingView: View {
             }
             .font(.callout)
 
-            Spacer()
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var permissions: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Two permissions")
-                .font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
-
-            Text("Both are granted in System Settings. We'll show you exactly where.")
-                .foregroundStyle(.secondary)
+            OnboardingStepHeader(
+                symbol: "lock.shield",
+                title: "Two permissions",
+                subtitle: "Both are granted in System Settings. We'll show you exactly where."
+            )
 
             VStack(spacing: 12) {
                 OnboardingPermission(
@@ -176,6 +218,20 @@ struct OnboardingView: View {
         }
     }
 
+    /// Микрофон на гербе дышит — едва заметно, как приглашение заговорить.
+    /// «Уменьшить движение» и macOS 14 получают спокойный статичный символ.
+    @ViewBuilder
+    private var heroGlyph: some View {
+        let glyph = Image(systemName: "mic.fill")
+            .font(.system(size: 34, weight: .medium))
+            .foregroundStyle(.white)
+        if #available(macOS 15.0, *), !reduceMotion {
+            glyph.symbolEffect(.breathe, options: .repeat(.continuous))
+        } else {
+            glyph
+        }
+    }
+
     private var needsAccessibilityRepair: Bool {
         switch state.accessibilityState {
         case .repairRequired, .failed:
@@ -202,9 +258,11 @@ struct OnboardingView: View {
 
     private var model: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Recognition model")
-                .font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
+            OnboardingStepHeader(
+                symbol: "arrow.down.circle",
+                title: "Recognition model",
+                subtitle: "One download — after it, recognition works without the network."
+            )
 
             ModelStatusView(
                 status: ModelStatus.make(
@@ -224,9 +282,11 @@ struct OnboardingView: View {
 
     private var tryIt: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Try it")
-                .font(.title2.bold())
-                .accessibilityAddTraits(.isHeader)
+            OnboardingStepHeader(
+                symbol: "mic",
+                title: "Try it",
+                subtitle: "Hold \(state.hotkey.title), say something, and release. The text will appear in the field below."
+            )
 
             Picker("Dictation key", selection: $state.hotkey) {
                 ForEach(DictationHotkey.allCases, id: \.self) { key in
@@ -249,25 +309,30 @@ struct OnboardingView: View {
                 .accessibilityLabel("Key warning. \(warning)")
             }
 
-            Text("Hold \(state.hotkey.title), say something, and release. The text will appear in the field below.")
-                .foregroundStyle(.secondary)
-
             // Поле для пробы. Настоящее, с изменяемым текстом: раньше оно было
             // привязано к константе, и продиктованное в нём не появлялось
             // никогда — первая же попытка выглядела так, будто ничего не
             // работает. Курсор ставится сюда сам, иначе текст уйдёт в то окно,
             // которое было впереди до онбординга.
             TextEditor(text: $trial)
-                .frame(height: 90)
+                .frame(height: 96)
                 .focused($trialFocused)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
                 .onAppear { trialFocused = true }
                 .accessibilityLabel("Trial dictation field")
 
+            // Цвет — точке, а не словам: красный текст читается как ошибка,
+            // а здесь всё идёт как задумано.
             if state.dictationState == .listening {
-                Label("Listening…", systemImage: "waveform")
-                    .foregroundStyle(.red)
-                    .accessibilityLabel("Recording")
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(.red)
+                        .frame(width: 8, height: 8)
+                    Text("Listening…")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Recording")
             }
 
             if trialSucceeded {
@@ -292,7 +357,6 @@ struct OnboardingView: View {
                 forward()
             }
         }
-        .buttonStyle(.borderedProminent)
         // Кнопка по умолчанию: Return ведёт мастер вперёд. Раньше главное
         // действие всей установки было недоступно с клавиатуры — Return не
         // делал ничего, и пройти четыре шага без мыши было нельзя. На последнем
@@ -300,6 +364,7 @@ struct OnboardingView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(blockReason != nil)
         .accessibilityHint(blockReason ?? "")
+        .prominentActionButtonStyle()
     }
 
     private var blockReason: String? {
@@ -321,11 +386,13 @@ struct OnboardingView: View {
     private func forward() {
         guard let next = step.next else { return }
         if next == .tryIt { trialStartCount = state.successfulDictationCount }
+        movingForward = true
         withAnimation(stepTransition) { step = next }
     }
 
     private func back() {
         guard let previous = step.previous else { return }
+        movingForward = false
         withAnimation(stepTransition) { step = previous }
     }
 
@@ -339,6 +406,52 @@ struct OnboardingView: View {
         // Окно закрывается здесь же. Иначе на экране оставалась бы пустая
         // рамка после завершения настройки.
         dismiss()
+    }
+}
+
+/// Заголовок шага: символ, название, пояснение — один рисунок на все шаги.
+private struct OnboardingStepHeader: View {
+    let symbol: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .symbolRenderingMode(.hierarchical)
+                .accessibilityHidden(true)
+
+            Text(title)
+                .font(.title2.bold())
+                .accessibilityAddTraits(.isHeader)
+
+            Text(subtitle)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Точки прогресса. Текущий шаг — вытянутая капсула, как в ассистентах macOS.
+///
+/// Для VoiceOver это один элемент со словами «Step 2 of 4»: отдельные точки
+/// на слух не значат ничего.
+private struct OnboardingProgressDots: View {
+    let step: OnboardingStep
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(OnboardingStep.allCases, id: \.self) { candidate in
+                Capsule()
+                    .fill(candidate == step ? Color.accentColor : Color.secondary.opacity(0.35))
+                    .frame(width: candidate == step ? 18 : 6, height: 6)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(step.progressAccessibilityLabel)
+        .help(step.progressText)
     }
 }
 
@@ -395,6 +508,6 @@ private struct OnboardingPermission: View {
             }
         }
         .padding(12)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
     }
 }

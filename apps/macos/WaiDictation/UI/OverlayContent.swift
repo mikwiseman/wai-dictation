@@ -77,7 +77,11 @@ struct OverlayContent: Equatable {
             let seconds = spokenSeconds(elapsed)
             return OverlayContent(
                 title: "Listening",
-                subtitle: "\(shortSeconds(elapsed)) · Hotkey — insert · Esc — delete",
+                // Коротко нарочно: «отпусти — вставится» человек уже делает
+                // руками, держа клавишу. Остаётся только выход — Esc. Полная
+                // инструкция живёт в объявлении ниже: для незрячего оно —
+                // единственный интерфейс.
+                subtitle: "\(shortSeconds(elapsed)) · Esc to cancel",
                 tone: .recording,
                 accessibilityLabel: "Recording, \(seconds). Press the hotkey to insert. Press Escape to delete the recording.",
                 // Главное объявление во всём приложении: без него незрячий
